@@ -18,7 +18,7 @@ const BANDS: Band[] = [
   { l: "In the past", s: "2+ months", max: Infinity, w: 1.05 }
 ];
 const FOLDC: [string, string][] = [["--g1", "#fff"], ["--g2", "#2B1500"], ["--g3", "#2A2100"], ["--g4", "#032E2A"], ["--g5", "#fff"], ["--g6", "#fff"], ["--g7", "#fff"]];
-const WMAX = 2.6, GAPDEG = 5, SAMEGAP = 1.5, MAXFILES = 5, LOOSE = 3;
+const GAPDEG = 5, SAMEGAP = 1.5, MAXFILES = 5, LOOSE = 3;
 /** Where the oldest folder ends, in degrees clockwise from the pointer: about 3/4 of the way round, leaving the
  *  last quarter empty so the start and end of time never sit next to each other. */
 const ARC_END = 258;
@@ -154,38 +154,57 @@ function layout() {
   items = out.map(f => ({ ...f, span: 0, ang: 0, W: 0, x: 0, y: 0, near: 0 }));
 }
 
+/** How big each item is next to the newest note: recent work is drawn largest and every step back in time shrinks. */
+const SIZE = [1, 0.8, 0.71, 0.63, 0.56], MORE_SIZE = 0.84;
+/** How far each item reaches over the center circle, as a share of its width: most at the top, fading to none at
+ *  the bottom so folders never cover the hub's Import and Blank page buttons. */
+const OVERLAP = 0.14;
+const sizeOf = (f: Item) => f.more ? MORE_SIZE : SIZE[BANDS.indexOf(f.b)] ?? SIZE[SIZE.length - 1];
+/** Distance from the dial's center to an item's center when it sits at `deg` (0 = the pointer). */
+function radiusAt(W: number, deg: number, folder: boolean) {
+  const t = deg * Math.PI / 180, cos = Math.cos(t);
+  const inward = (W * 0.74 * Math.abs(cos) + W * Math.abs(Math.sin(t))) / 2;
+  const tuck = OVERLAP * W * (1 + cos) / 2, peek = folder ? 0.2 * W * Math.max(0, -cos) : 0; // files peek out of a folder's top
+  return G.hub / 2 + inward + peek - tuck;
+}
+
 /** Packs items clockwise from the pointer by their real size: neighbours in the same band touch, and any room
  *  left before ARC_END goes into the gaps between bands, so recent notes stay bunched near the top and older
  *  folders step down the right side and round the bottom. Shrinks everything if it would run past ARC_END. */
-function placeItems(rF: number, maxW: number) {
-  const R = rF + G.push * 0.5, minW = Math.max(92, maxW * 0.66);
-  const half = (W: number, deg: number) => {
-    const t = deg * Math.PI / 180, foot = W * Math.abs(Math.cos(t)) + W * 0.74 * Math.abs(Math.sin(t));
-    return Math.asin(Math.min(1, foot / 2 / R)) * 180 / Math.PI;
+function placeItems(maxW: number) {
+  const half = (f: Item, deg: number) => {
+    const t = deg * Math.PI / 180, foot = f.W * Math.abs(Math.cos(t)) + f.W * 0.74 * Math.abs(Math.sin(t));
+    return Math.asin(Math.min(1, foot / 2 / radiusAt(f.W, deg, !f.loose))) * 180 / Math.PI;
   };
-  let scale = 1, ends: number[] = [];
-  for (let tries = 0; tries < 12; tries++) {
-    items.forEach(f => { f.W = Math.max(minW * Math.min(1, scale + 0.15), maxW * Math.pow(f.w / WMAX, 0.85) * scale); });
+  const pack = () => {
     let a = 0;
-    ends = [];
+    const ends: number[] = [];
     items.forEach((f, i) => {
       if (i) {
         const p = items[i - 1], gap = p.b === f.b ? SAMEGAP : GAPDEG;
-        const h1 = half(p.W, p.ang), guess = p.ang + h1 + gap + half(f.W, p.ang + h1);
-        a = p.ang + h1 + gap + half(f.W, guess);
+        const h1 = half(p, p.ang), guess = p.ang + h1 + gap + half(f, p.ang + h1);
+        a = p.ang + h1 + gap + half(f, guess);
       }
-      f.ang = a; f.span = 2 * half(f.W, a);
+      f.ang = a; f.span = 2 * half(f, a);
       ends.push(a + f.span / 2);
     });
-    if (!items.length || ends[ends.length - 1] <= ARC_END || scale < 0.55) break;
-    scale *= 0.92;
+    return ends.length ? ends[ends.length - 1] : 0;
+  };
+  // Shrink a little if the ring is full, but never so much that recent notes stop being readable;
+  // past that, neighbours overlap slightly instead (the one under the pointer always comes to the front).
+  let scale = 1, end = 0;
+  for (;;) {
+    items.forEach(f => { f.W = Math.max(64, maxW * sizeOf(f) * scale); });
+    end = pack();
+    if (end <= ARC_END || scale <= 0.86) break;
+    scale *= 0.95;
   }
   if (items.length < 2) return;
+  if (end > ARC_END) { const k = ARC_END / end; items.forEach(f => { f.ang *= k; }); return; }
   const breaks = items.reduce((t, f, i) => t + (i && items[i - 1].b !== f.b ? 1 : 0), 0);
-  const spare = ARC_END - ends[ends.length - 1];
-  if (spare <= 0 || !breaks) return;
+  if (!breaks) return;
   let shift = 0;
-  items.forEach((f, i) => { if (i && items[i - 1].b !== f.b) shift += spare / breaks; f.ang += shift; });
+  items.forEach((f, i) => { if (i && items[i - 1].b !== f.b) shift += (ARC_END - end) / breaks; f.ang += shift; });
 }
 
 function itemHTML(f: Item, i: number) {
@@ -268,7 +287,7 @@ function sizeDial() {
   ring.style.width = ring.style.height = 2 * rF + "px";
   // notes away from the pointer sit a little outside the ring, so they don't crowd the hub or the selected note
   G = { c, rF, hub, push: Math.max(14, Math.min(46, size * 0.06)), els: [...document.querySelectorAll<HTMLElement>("#folders .folder")] };
-  placeItems(rF, maxW);
+  placeItems(maxW);
   items.forEach((f, i) => {
     const el = G.els[i];
     el.style.setProperty("--W", f.W + "px");
@@ -283,13 +302,13 @@ function sizeDial() {
 }
 
 function draw() {
-  const { c, rF, push } = G;
+  const { c } = G;
   let best = 0, bd = 999;
   items.forEach((f, i) => {
     const a = f.ang + rot, d = wrapDeg(a), t = a * Math.PI / 180;
     if (Math.abs(d) < bd) { bd = Math.abs(d); best = i; }
-    const out = push * Math.min(1, Math.abs(d) / 35); // 0 at the pointer, full a little way round
-    f.x = c + (rF + out) * Math.sin(t); f.y = c - (rF + out) * Math.cos(t); f.near = Math.max(0, 1 - Math.abs(d) / 90);
+    const r = radiusAt(f.W, d, !f.loose);
+    f.x = c + r * Math.sin(t); f.y = c - r * Math.cos(t); f.near = Math.max(0, 1 - Math.abs(d) / 90);
   });
   if (best !== sel) { sel = best; updateInfo(); }
   paint();

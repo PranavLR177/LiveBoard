@@ -22,6 +22,8 @@ jobs:
       PGPASSWORD: postgres
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # tests/sql/upgrade.sh reads an older schema.sql from history
       - uses: actions/setup-node@v4
         with:
           node-version: 22
