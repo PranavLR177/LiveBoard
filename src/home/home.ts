@@ -8,19 +8,22 @@ import { setPendingOpen, TYPE_INFO } from "../editor/markerBox";
    Recall plays inside the dial's center while the ring turns to each question's note. */
 
 type Band = { l: string; s: string; max: number; w: number };
+// The ring runs clockwise from "now" at the pointer. Everything older than two months shares one folder whose
+// name follows what's in it (Months ago, A year ago, Years ago), so the ring never fills with tiny folders.
 const BANDS: Band[] = [
   { l: "Recently opened", s: "last 24 hours", max: DAY, w: 2.6 },
   { l: "This week", s: "1–7 days", max: 7 * DAY, w: 1.9 },
-  { l: "This month", s: "1–4 weeks", max: 31 * DAY, w: 1.15 },
-  { l: "Last month", s: "1–2 months", max: 62 * DAY, w: 0.75 },
-  { l: "This year", s: "2–12 months", max: 365 * DAY, w: 0.55 },
-  { l: "Last year", s: "1–2 years", max: 730 * DAY, w: 0.45 },
-  { l: "Older", s: "2+ years", max: Infinity, w: 0.4 }
+  { l: "This month", s: "1–4 weeks", max: 31 * DAY, w: 1.35 },
+  { l: "Last month", s: "1–2 months", max: 62 * DAY, w: 1.1 },
+  { l: "In the past", s: "2+ months", max: Infinity, w: 1.05 }
 ];
 const FOLDC: [string, string][] = [["--g1", "#fff"], ["--g2", "#2B1500"], ["--g3", "#2A2100"], ["--g4", "#032E2A"], ["--g5", "#fff"], ["--g6", "#fff"], ["--g7", "#fff"]];
-const WMAX = 2.6, GAPDEG = 7, SAMEGAP = 2.5, MAXFILES = 5, LOOSE = 3;
+const WMAX = 2.6, GAPDEG = 5, SAMEGAP = 1.5, MAXFILES = 5, LOOSE = 3;
+/** Where the oldest folder ends, in degrees clockwise from the pointer: about 3/4 of the way round, leaving the
+ *  last quarter empty so the start and end of time never sit next to each other. */
+const ARC_END = 258;
 
-interface Item { b: Band; ns: Note[]; w: number; loose?: boolean; more?: boolean; span: number; ang: number; W: number; x: number; y: number; near: number }
+interface Item { b: Band; label: string; ns: Note[]; w: number; loose?: boolean; more?: boolean; span: number; ang: number; W: number; x: number; y: number; near: number }
 interface Recall { queue: string[]; i: number; revealed: boolean; got: number; done: boolean; k: number }
 
 let items: Item[] = [];
@@ -128,6 +131,13 @@ function renderFollow() {
 }
 
 /* ---------- dial ---------- */
+function pastLabel(ns: Note[]) {
+  const ages = ns.map(n => Date.now() - n.openedAt), young = Math.min(...ages), old = Math.max(...ages);
+  if (old < 365 * DAY) return "Months ago";
+  if (young >= 730 * DAY) return "Years ago";
+  if (young >= 365 * DAY && old < 730 * DAY) return "A year ago";
+  return "In the past";
+}
 function layout() {
   const notes = liveNotes().sort((a, b) => b.openedAt - a.openedAt);
   const out: Omit<Item, "span" | "ang" | "W" | "x" | "y" | "near">[] = [];
@@ -136,22 +146,46 @@ function layout() {
     const ns = notes.filter(n => { const age = Date.now() - n.openedAt; return age >= lo && age < b.max; });
     if (!ns.length) return;
     if (bi === 0) {
-      ns.slice(0, LOOSE).forEach(n => out.push({ b, ns: [n], w: b.w, loose: true }));
-      if (ns.length > LOOSE) out.push({ b, ns: ns.slice(LOOSE), w: 1.25, more: true });
-    } else out.push({ b, ns, w: b.w });
+      ns.slice(0, LOOSE).forEach(n => out.push({ b, label: b.l, ns: [n], w: b.w, loose: true }));
+      if (ns.length > LOOSE) out.push({ b, label: b.l, ns: ns.slice(LOOSE), w: 1.25, more: true });
+    } else out.push({ b, label: b.max === Infinity ? pastLabel(ns) : b.l, ns, w: b.w });
   });
-  const gaps = out.reduce((t, f, i) => t + (i ? (out[i - 1].b === f.b ? SAMEGAP : GAPDEG) : 0), 0) + GAPDEG;
-  const tw = out.reduce((t, f) => t + f.w, 0) || 1, unit = Math.min(70 / WMAX, (360 - gaps) / tw);
-  // Few notes (say, nothing opened in the last day) would bunch into one arc; spread the spare angle evenly
-  // so they always surround the hub. Item sizes stay the same; only the spacing grows.
-  const extra = out.length > 1 ? Math.max(0, 360 - gaps - tw * unit) / out.length : 0;
-  let a = out.length ? -out[0].w * unit / 2 : 0;
-  items = out.map((f, i) => {
-    if (i) a += (out[i - 1].b === f.b ? SAMEGAP : GAPDEG) + extra;
-    const span = f.w * unit, it: Item = { ...f, span, ang: a + span / 2, W: 0, x: 0, y: 0, near: 0 };
-    a += span;
-    return it;
-  });
+  // Angles depend on the dial's size, so sizeDial() places them.
+  items = out.map(f => ({ ...f, span: 0, ang: 0, W: 0, x: 0, y: 0, near: 0 }));
+}
+
+/** Packs items clockwise from the pointer by their real size: neighbours in the same band touch, and any room
+ *  left before ARC_END goes into the gaps between bands, so recent notes stay bunched near the top and older
+ *  folders step down the right side and round the bottom. Shrinks everything if it would run past ARC_END. */
+function placeItems(rF: number, maxW: number) {
+  const R = rF + G.push * 0.5, minW = Math.max(92, maxW * 0.66);
+  const half = (W: number, deg: number) => {
+    const t = deg * Math.PI / 180, foot = W * Math.abs(Math.cos(t)) + W * 0.74 * Math.abs(Math.sin(t));
+    return Math.asin(Math.min(1, foot / 2 / R)) * 180 / Math.PI;
+  };
+  let scale = 1, ends: number[] = [];
+  for (let tries = 0; tries < 12; tries++) {
+    items.forEach(f => { f.W = Math.max(minW * Math.min(1, scale + 0.15), maxW * Math.pow(f.w / WMAX, 0.85) * scale); });
+    let a = 0;
+    ends = [];
+    items.forEach((f, i) => {
+      if (i) {
+        const p = items[i - 1], gap = p.b === f.b ? SAMEGAP : GAPDEG;
+        const h1 = half(p.W, p.ang), guess = p.ang + h1 + gap + half(f.W, p.ang + h1);
+        a = p.ang + h1 + gap + half(f.W, guess);
+      }
+      f.ang = a; f.span = 2 * half(f.W, a);
+      ends.push(a + f.span / 2);
+    });
+    if (!items.length || ends[ends.length - 1] <= ARC_END || scale < 0.55) break;
+    scale *= 0.92;
+  }
+  if (items.length < 2) return;
+  const breaks = items.reduce((t, f, i) => t + (i && items[i - 1].b !== f.b ? 1 : 0), 0);
+  const spare = ARC_END - ends[ends.length - 1];
+  if (spare <= 0 || !breaks) return;
+  let shift = 0;
+  items.forEach((f, i) => { if (i && items[i - 1].b !== f.b) shift += spare / breaks; f.ang += shift; });
 }
 
 function itemHTML(f: Item, i: number) {
@@ -167,7 +201,7 @@ function itemHTML(f: Item, i: number) {
   return `<div class="folder" data-f="${i}" style="--fc:var(${fc[0]});--ft:${fc[1]}">
     <div class="fback"><span class="ftab"></span></div>
     ${show.map((n, k) => `<button class="file" data-n="${n.id}" tabindex="-1" style="--c:${courseColor(n.courseId)};--k:${k};z-index:${10 + m - k}" aria-label="${esc(courseName(n.courseId) + ", " + n.title)}"><span class="ft">${esc(n.title)}</span><span class="fm">${esc(courseName(n.courseId))} · ${agoLong(n.openedAt)}</span>${hasDue(n.id) ? '<span class="md"></span>' : ""}</button>`).join("")}
-    <div class="ffront"><b>${f.more ? `+${f.ns.length} more` : f.b.l}</b><span>${f.more ? "recently opened" : `${f.ns.length} note${f.ns.length > 1 ? "s" : ""}${f.ns.length > MAXFILES ? ` · top ${MAXFILES}` : ""}`}</span></div></div>`;
+    <div class="ffront"><b>${f.more ? `+${f.ns.length} more` : f.label}</b><span>${f.more ? "recently opened" : `${f.ns.length} note${f.ns.length > 1 ? "s" : ""}${f.ns.length > MAXFILES ? ` · top ${MAXFILES}` : ""}`}</span></div></div>`;
 }
 
 export function renderHome(stage: HTMLElement, h: NonNullable<typeof handlers>, keep = false) {
@@ -234,12 +268,11 @@ function sizeDial() {
   ring.style.width = ring.style.height = 2 * rF + "px";
   // notes away from the pointer sit a little outside the ring, so they don't crowd the hub or the selected note
   G = { c, rF, hub, push: Math.max(14, Math.min(46, size * 0.06)), els: [...document.querySelectorAll<HTMLElement>("#folders .folder")] };
+  placeItems(rF, maxW);
   items.forEach((f, i) => {
-    const arc = rF * f.span * Math.PI / 180;
-    f.W = Math.max(64, Math.min(maxW * Math.pow(f.w / WMAX, 0.85), arc * 1.08));
     const el = G.els[i];
     el.style.setProperty("--W", f.W + "px");
-    el.classList.toggle("small", f.W < 100);
+    el.classList.toggle("small", f.loose ? f.W < 100 : f.W < 140);
     el.classList.toggle("mini", f.W < 78);
   });
   const compact = hub < 210, info = $("#info")!;
@@ -312,14 +345,14 @@ function updateInfo() {
     const ms = liveMarkers().filter(m => m.noteId === n.id), due = ms.filter(m => isDue(m) && recallable(m)).length, mastered = ms.filter(m => m.mastery === 2).length;
     const ago = agoLong(n.openedAt), num = (ago.match(/^[\d.]+/) || [""])[0], lab = num ? ago.slice(num.length).trim() : "opened";
     setHc(courseColor(n.courseId), el);
-    html = `<span class="band">${esc(f.more ? "More recent" : f.b.l)}</span><span class="pill" style="background:${courseColor(n.courseId)}">${esc(courseName(n.courseId))}</span>
+    html = `<span class="band">${esc(f.more ? "More recent" : f.label)}</span><span class="pill" style="background:${courseColor(n.courseId)}">${esc(courseName(n.courseId))}</span>
       <div class="htitle">${esc(n.title)}</div>
       <div class="stats"><span class="stat"><b>${num || "Now"}</b>${esc(lab)}</span><span class="stat"><b>${ms.length}</b>marker${ms.length === 1 ? "" : "s"}</span>${ms.length ? `<span class="stat"><b>${mastered}</b>mastered</span>` : ""}${due ? `<span class="stat due"><b>${due}</b>to recall</span>` : ""}</div>
       <button class="openlink">Open note</button>`;
   } else {
     setHc(`var(${fc[0]})`, el);
     const cs = [...new Set(f.ns.map(x => x.courseId))];
-    html = `<span class="pill" style="background:var(${fc[0]});color:${fc[1]}">${f.more ? "More recent" : f.b.l}</span>
+    html = `<span class="pill" style="background:var(${fc[0]});color:${fc[1]}">${f.more ? "More recent" : f.label}</span>
       <div class="bignum" style="--a:var(${fc[0]})">${f.ns.length}<small>note${f.ns.length > 1 ? "s" : ""}</small></div>
       <div class="cdots">${cs.slice(0, 8).map(c => `<span title="${esc(courseName(c))}" style="background:${courseColor(c)}"></span>`).join("")}<em>${cs.length} course${cs.length > 1 ? "s" : ""}</em></div>
       <button class="openlink">Open newest</button>`;

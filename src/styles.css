@@ -99,7 +99,8 @@ button:disabled { cursor: default; opacity: .6; }
 .ffront b { font: 700 1.15em/1.1 var(--display); letter-spacing: -.01em; color: var(--ft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ffront span { font: 500 .78em/1.3 var(--mono); color: var(--ft); opacity: .78; margin-top: .25em; white-space: nowrap; }
 .folder.small .ffront span { display: none; }
-.folder.small .ffront b { font-size: 1.25em; }
+.folder.small .ffront, .folder.mini .ffront { height: auto; min-height: 62%; }
+.folder.small .ffront b { font-size: 1.2em; white-space: normal; line-height: 1.05; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .folder.mini .ffront { padding: .6em .5em; }
 .folder.mini .ffront b { font-size: 1.3em; white-space: normal; line-height: 1.05; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .folder.mini .file .ft, .folder.mini .file .fm { display: none; }
