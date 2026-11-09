@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Upgrade check: start from the schema as it was before sync revisions (git 2a850a2), add data the old way,
+# Upgrade check: start from the schema as it was before sync revisions (git 6731ce5), add data the old way,
 # run today's schema twice, then confirm a fresh device's pull (seq > 0) sees every old record.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 DB=${DB:-lbupgrade}
 dropdb --if-exists "$DB" && createdb "$DB"
-OLD=$(mktemp); git show 2a850a2:supabase/schema.sql > "$OLD"
+OLD=$(mktemp); git show 6731ce5:supabase/schema.sql > "$OLD"
 psql -q -v ON_ERROR_STOP=1 -d "$DB" -f tests/sql/supabase-shim.sql -f "$OLD" >/dev/null 2>&1
 psql -q -v ON_ERROR_STOP=1 -d "$DB" >/dev/null 2>&1 <<'SQL'
 insert into auth.users values ('00000000-0000-0000-0000-00000000000a');
