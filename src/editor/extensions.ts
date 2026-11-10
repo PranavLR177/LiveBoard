@@ -1,5 +1,6 @@
 import { Mark, Node, mergeAttributes } from "@tiptap/core";
 import { state } from "../store";
+import { isDark } from "../theme";
 
 /* The marked passage: a faint highlight in the marker's type color. */
 export const MarkerMark = Mark.create({
@@ -199,7 +200,7 @@ let n = 0;
 async function renderMermaid(code: string) {
   if (!mermaidReady) {
     mermaidReady = import("mermaid").then(m => {
-      const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+      const dark = isDark();
       m.default.initialize({ startOnLoad: false, theme: dark ? "dark" : "default", securityLevel: "strict", fontFamily: "Bricolage Grotesque, system-ui, sans-serif" });
       return m.default;
     });

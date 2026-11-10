@@ -1,14 +1,16 @@
 /* LiveBoard. Layout: a morning strip over a ring of bright folders (home), or a single page of notes with a marker rail (note).
    Markers are the only tool; their type sets their color, their mastery sets how full their dot is. */
 :root {
-  --desk: #F4F2FF; --paper: #FFFFFF; --ink: #1B1638; --muted: #6B6590; --line: #E3DFF6;
-  --cobalt: #5B4BFF; --oncobalt: #fff; --mark: #FFB800; --markwash: rgba(255, 184, 0, .34); --good: #12B679; --bad: #E5484D;
+  /* Light: near-white and quiet. Surfaces are neutral with a trace of violet; color is saved for courses, folders and markers. */
+  --desk: #F7F7FB; --paper: #FFFFFF; --ink: #1D1B2E; --muted: #6C6A80; --line: #E7E6EF;
+  --cobalt: #5B4BFF; --oncobalt: #fff; --mark: #FFB800; --markwash: rgba(255, 184, 0, .30); --good: #12B679; --bad: #E5484D;
   --g1: #FF5A5F; --g2: #FF9F1C; --g3: #FFD23F; --g4: #2EC4B6; --g5: #3A86FF; --g6: #8338EC; --g7: #FF4FA3;
   --t-note: #3A86FF; --t-question: #F5A300; --t-explain: #8338EC; --t-math: #12B679; --t-visual: #FF4FA3; --t-link: #00A6C8; --t-reminder: #FF7A1A;
   --display: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
   --serif: "Literata", Georgia, "Times New Roman", serif;
   --mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
-  --shadow: 0 1px 2px rgba(20, 30, 45, .06), 0 8px 28px rgba(20, 30, 45, .10);
+  --shadow: 0 1px 2px rgba(24, 22, 48, .05), 0 8px 24px rgba(24, 22, 48, .07);
+  --wash: 5%; /* how strongly the two corner colors tint the page */
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
@@ -16,7 +18,7 @@
     --desk: #14112A; --paper: #221E3F; --ink: #F2EFFF; --muted: #A7A2CC; --line: #36305C;
     --cobalt: #9488FF; --oncobalt: #14112A; --mark: #FFC53D; --markwash: rgba(255, 197, 61, .24); --good: #2FD08F; --bad: #FF6B6F;
     --t-note: #6FA6FF; --t-question: #FFC53D; --t-explain: #A77BFF; --t-math: #2FD08F; --t-visual: #FF77B9; --t-link: #3CCFEA; --t-reminder: #FF9A4D;
-    --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 30px rgba(0, 0, 0, .35);
+    --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 30px rgba(0, 0, 0, .35); --wash: 15%;
     color-scheme: dark;
   }
 }
@@ -24,7 +26,7 @@
     --desk: #14112A; --paper: #221E3F; --ink: #F2EFFF; --muted: #A7A2CC; --line: #36305C;
     --cobalt: #9488FF; --oncobalt: #14112A; --mark: #FFC53D; --markwash: rgba(255, 197, 61, .24); --good: #2FD08F; --bad: #FF6B6F;
     --t-note: #6FA6FF; --t-question: #FFC53D; --t-explain: #A77BFF; --t-math: #2FD08F; --t-visual: #FF77B9; --t-link: #3CCFEA; --t-reminder: #FF9A4D;
-    --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 30px rgba(0, 0, 0, .35);
+    --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 30px rgba(0, 0, 0, .35); --wash: 15%;
     color-scheme: dark;
 }
 @property --hc { syntax: "<color>"; inherits: true; initial-value: #3A86FF; }
@@ -33,7 +35,7 @@
 html, body { height: 100%; margin: 0; }
 body {
   background: var(--desk);
-  background-image: radial-gradient(60vmax 50vmax at 0% 0%, color-mix(in srgb, var(--g7) 14%, transparent), transparent 70%), radial-gradient(60vmax 50vmax at 100% 100%, color-mix(in srgb, var(--g4) 16%, transparent), transparent 70%);
+  background-image: radial-gradient(60vmax 50vmax at 0% 0%, color-mix(in srgb, var(--g7) var(--wash), transparent), transparent 70%), radial-gradient(60vmax 50vmax at 100% 100%, color-mix(in srgb, var(--g4) var(--wash), transparent), transparent 70%);
   color: var(--ink); font: 15px/1.5 var(--display); overflow: hidden; -webkit-font-smoothing: antialiased;
 }
 button, select, input, textarea { font: inherit; color: inherit; }
@@ -53,6 +55,13 @@ button:disabled { cursor: default; opacity: .6; }
 .syncstate { font: 11px var(--mono); color: var(--muted); border: 1px solid var(--line); border-radius: 99px; padding: 3px 9px; }
 .iconbtn { border: 1px solid var(--line); background: var(--paper); border-radius: 50%; width: 36px; height: 36px; display: grid; place-items: center; padding: 0; }
 .iconbtn svg { width: 18px; height: 18px; }
+.themebtn .moon { display: none; }
+:root[data-theme="dark"] .themebtn .sun { display: none; }
+:root[data-theme="dark"] .themebtn .moon { display: block; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .themebtn .sun { display: none; } :root:not([data-theme="light"]) .themebtn .moon { display: block; } }
+.seg { display: inline-flex; background: var(--desk); border: 1px solid var(--line); border-radius: 99px; padding: 3px; gap: 2px; }
+.seg button { border: 0; background: none; border-radius: 99px; padding: 6px 14px; font-size: 13.5px; color: var(--muted); }
+.seg button[aria-checked="true"] { background: var(--cobalt); color: var(--oncobalt); }
 .desk { position: relative; min-height: 0; overflow: hidden; }
 .stage { position: absolute; inset: 0; overflow: auto; padding-block: 16px calc(28px + env(safe-area-inset-bottom, 0px)); padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
 .fatal { max-width: 520px; margin: 10vh auto; text-align: center; }

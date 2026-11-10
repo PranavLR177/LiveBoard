@@ -153,6 +153,18 @@ const BASE = process.env.BASE || "http://localhost:4173";
   ok((await p.$$("#editor .pin")).length >= 2, "study guide gets a section per connected point");
   ok((await p.$$(".stringtag")).length >= 2, "each section links back to its point");
 
+  // Light and dark: the header button flips the theme, the choice survives a reload, and Settings can hand it back to the device.
+  const themeOf = () => p.evaluate(() => ({ attr: document.documentElement.getAttribute("data-theme"), desk: getComputedStyle(document.documentElement).getPropertyValue("--desk").trim() }));
+  const before = await themeOf();
+  await p.click("#themeBtn");
+  const flipped = await themeOf();
+  ok(flipped.attr && flipped.desk !== before.desk, `theme button switches light and dark (${before.desk} → ${flipped.desk})`);
+  await p.reload(); await p.waitForSelector("#themeBtn");
+  ok((await themeOf()).attr === flipped.attr, "the theme choice is remembered on this device");
+  await p.click("#settingsBtn"); await p.waitForSelector('[data-theme-pick="system"]');
+  await p.click('[data-theme-pick="system"]');
+  ok((await themeOf()).attr === null, "Settings can set the theme back to match the device");
+
   await b.close();
   console.log(errs.length ? "\nFAILURES:\n" + errs.join("\n") : "\nALL REGRESSIONS PASS");
   process.exit(errs.length ? 1 : 0);

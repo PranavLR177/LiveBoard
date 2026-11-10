@@ -314,6 +314,7 @@ const MOCK = intent => {
     check(await p.evaluate(() => document.querySelector("#editor .ProseMirror").isContentEditable && !document.querySelector(".paper.testing")), "leaving Test me unlocks the note");
 
     await p.click("#tapzone");
+    await p.waitForFunction(() => !!document.activeElement?.closest("#editor")); // the editor takes focus on the next frame
     await p.keyboard.type("Osmosis is defined as the movement of water across a membrane toward the side with more solute.");
     await p.waitForSelector(".rdot.ghost", { timeout: 5000 });
     const pinsBefore = (await p.$$("#editor .pin")).length;

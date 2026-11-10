@@ -587,7 +587,7 @@ export function renderNote(stage: HTMLElement, id: string, goHome: () => void, o
     const wrapTop = rail.getBoundingClientRect().top;
     const pins = [...document.querySelectorAll<HTMLElement>("#editor .pin")];
     let lastY = -20;
-    rail.innerHTML = pins.map(p => {
+    const dots = pins.map(p => {
       const m = state.markers.get(p.dataset.pin || "");
       if (!m) return "";
       let y = p.getBoundingClientRect().top - wrapTop;
@@ -597,13 +597,16 @@ export function renderNote(stage: HTMLElement, id: string, goHome: () => void, o
     }).join("");
     // suggestions sit on the same rail as dashed dots, kept clear of the real ones
     const taken = pins.map(p => p.getBoundingClientRect().top - wrapTop);
-    rail.insertAdjacentHTML("beforeend", candidates.map((c, i) => {
+    const ghosts = candidates.map((c, i) => {
       let y: number;
       try { y = ed!.view.coordsAtPos(c.from).top - wrapTop; } catch { return ""; }
       if (taken.some(t => Math.abs(t - y) < 16)) return "";
       taken.push(y);
       return `<button class="rdot ghost" data-sug="${i}" style="top:${y}px" title="Worth marking: ${esc(c.text.slice(0, 70))}" aria-label="Mark this suggested passage: ${esc(c.text.slice(0, 70))}"></button>`;
-    }).join(""));
+    }).join("");
+    // Only touch the rail when it actually changed: rebuilding it mid-tap would swallow the tap.
+    const html = dots + ghosts;
+    if (rail.dataset.html !== html) { rail.innerHTML = html; rail.dataset.html = html; }
     layoutStrings();
     const ms = markersOf(id);
     const pfp = $("#pfp");
@@ -698,11 +701,19 @@ export function renderNote(stage: HTMLElement, id: string, goHome: () => void, o
     showCandidate(g ? candidates[Number(g.dataset.sug)] : null);
   });
   railEl.addEventListener("pointerleave", () => showCandidate(null));
+  // If the rail is rebuilt between press and release, the click lands on the rail itself; remember what was pressed.
+  let pressed: { c: Candidate; at: number } | null = null;
+  railEl.addEventListener("pointerdown", e => {
+    const g = (e.target as HTMLElement).closest<HTMLElement>(".rdot.ghost");
+    pressed = g && candidates[Number(g.dataset.sug)] ? { c: candidates[Number(g.dataset.sug)], at: Date.now() } : null;
+  });
   $("#rail", stage)!.addEventListener("click", e => {
     const b = (e.target as HTMLElement).closest<HTMLElement>(".rdot");
-    if (!b) return;
-    if (b.classList.contains("ghost")) {
-      const c = candidates[Number(b.dataset.sug)];
+    const lost = !b && pressed && Date.now() - pressed.at < 1500 ? pressed.c : null;
+    pressed = null;
+    if (!b && !lost) return;
+    if (lost || b!.classList.contains("ghost")) {
+      const c = lost ?? candidates[Number(b!.dataset.sug)];
       showCandidate(null);
       if (!c || !ed || testing) return;
       // the text may have shifted since it was found; only mark it if it still reads the same
@@ -711,7 +722,7 @@ export function renderNote(stage: HTMLElement, id: string, goHome: () => void, o
       refreshSuggestions();
       return;
     }
-    if (testing) return;
+    if (testing || !b) return;
     const pinEl = document.querySelector<HTMLElement>(`#editor .pin[data-pin="${CSS.escape(b.dataset.id!)}"]`);
     pinEl?.scrollIntoView({ block: "center", behavior: "smooth" });
     setTimeout(() => openBox(b.dataset.id!, pinEl), 280);

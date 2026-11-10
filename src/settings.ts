@@ -3,6 +3,7 @@ import { blockedCount, course, exportAll, liveCourses, pendingCount, putCourse, 
 import { createClass, currentUser, deleteAccountData, reuploadAfterErase, joinClass, signIn, signOut, syncConfigured, verifyCode } from "./sync";
 import { MAX_BACKUP_BYTES, validateBackup } from "./backup";
 import { $, armButton, esc, toast } from "./util";
+import { setTheme, themeChoice, type ThemeChoice } from "./theme";
 
 /* Settings: account, AI status, courses and classes, backup. */
 function blockedReasons() {
@@ -38,6 +39,10 @@ export async function openSettings(section?: string, onChanged?: () => void) {
       ${user && !state.meta.erasedAt && blockedCount() ? `<div class="restorebox" role="alert"><p><b>${blockedCount()} item${blockedCount() === 1 ? "" : "s"} couldn't upload.</b> ${blockedReasons()} They are kept on this device and aren't counted as saved, so this device's copy can't be removed until they're fixed.</p><div class="row"><button class="btn" data-export>Download a backup</button>${[...state.blocked.values()].includes("refused") ? `<button class="btn" id="sRekey">Upload them as new copies</button>` : ""}</div></div>` : ""}
       <label class="field">Your name (shown on class leaderboards)<input id="sName" maxlength="40" value="${esc(state.meta.displayName)}" placeholder="First name"></label>
     </section>
+    <section><h3>Appearance</h3>
+      <div class="seg themeseg" id="sTheme" role="radiogroup" aria-label="Theme">${(["system", "light", "dark"] as const).map(t => `<button role="radio" data-theme-pick="${t}" aria-checked="${themeChoice() === t}">${t === "system" ? "Match device" : t === "light" ? "Light" : "Dark"}</button>`).join("")}</div>
+      <p class="muted">Saved on this device only.</p>
+    </section>
     <section><h3>AI markers</h3>
       <p class="${ai.ai ? "" : "muted"}">${ai.ai ? `Connected${ai.model ? ` · ${esc(ai.model)}` : ""}.` : "Not connected on this server. Math, formatting, links and reminders still work; explaining, expanding and drafting need the AI. The setup guide in the README covers adding an Anthropic API key."}</p>
     </section>
@@ -57,6 +62,10 @@ export async function openSettings(section?: string, onChanged?: () => void) {
     <p class="muted small">LiveBoard · notes are stored on your device${syncConfigured() ? " and, when signed in, in your account" : ""}.</p>`;
 
   panel.querySelectorAll<HTMLButtonElement>("[data-export]").forEach(b => b.onclick = () => ($("#sExport", panel!) as HTMLButtonElement | null)?.click());
+  panel.querySelectorAll<HTMLElement>("[data-theme-pick]").forEach(b => b.onclick = () => {
+    setTheme(b.dataset.themePick as ThemeChoice);
+    panel!.querySelectorAll("[data-theme-pick]").forEach(x => x.setAttribute("aria-checked", String(x === b)));
+  });
   const name = $("#sName", panel) as HTMLInputElement;
   name.onchange = () => putMeta({ displayName: name.value.trim() });
   const out = async (removeDeviceCopy: boolean) => {

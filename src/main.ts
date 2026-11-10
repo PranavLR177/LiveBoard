@@ -1,4 +1,6 @@
 import "./styles.css";
+import { initTheme, isDark, onTheme, toggleTheme } from "./theme";
+initTheme(); // before anything renders, so there is no flash of the other theme
 import { cardFor, destroyHome, installHomeListeners, renderHome, setFocusNote, homeAlive, inRecall } from "./home/home";
 import { destroyNote, flushNote, renderNote } from "./editor/noteView";
 import { fileToHtml } from "./importers";
@@ -136,6 +138,8 @@ async function boot() {
   if (!owner) await seedWelcome();
   if (import.meta.env.VITE_ARTIFACT) await (await import("./demo")).seedDemo();
   installHomeListeners();
+  const tb = $("#themeBtn")!, labelTheme = () => tb.setAttribute("aria-label", isDark() ? "Switch to light mode" : "Switch to dark mode");
+  tb.onclick = toggleTheme; onTheme(labelTheme); labelTheme();
   $("#settingsBtn")!.onclick = () => openSettings(undefined, refresh);
   const ss = $("#syncState")!; // the sync line opens Settings, where waiting or refused items are explained
   ss.setAttribute("role", "button"); ss.tabIndex = 0;

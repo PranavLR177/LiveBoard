@@ -51,6 +51,8 @@ Markers are color-coded by type: writing, question, explanation, math, visual, l
 **Classes:** share a course as a class with a 6-character code, and classmates who join appear on a weekly leaderboard built from recall points.
 **Backup:** download and restore a JSON backup from Settings.
 
+**Light and dark.** The sun/moon button in the header switches themes, and Settings → Appearance offers Match device, Light or Dark. Dark is the original deep-violet look; light is near-white and quiet, with color kept for courses, folders and markers. The choice is saved per device, not synced.
+
 ## Set up and deploy
 
 You need three free accounts: **Supabase** (accounts and sync), an **Anthropic API key** (AI markers), and **Vercel** (hosting). The app also runs without any of them. It then saves on the device only, and math, formatting, links and reminders still work.
