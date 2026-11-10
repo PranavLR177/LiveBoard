@@ -39,8 +39,17 @@ async function freshenDemo() {
   await putLocalMeta({ demoAnchor: now, studyDays: [...new Set([...state.meta.studyDays, ...days])].sort() });
 }
 
+/** The preview's sample exams stay a few days ahead, so the exam countdown always has something to show. */
+async function demoExams() {
+  const day = (n: number) => { const d = new Date(Date.now() + n * DAY); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+  for (const [id, n] of [["demo-chem", 6], ["demo-bio", 15]] as const) {
+    const c = state.courses.get(id);
+    if (c && !c.deleted && c.examDate !== day(n)) await putCourse({ ...c, examDate: day(n) });
+  }
+}
+
 export async function seedDemo() {
-  if ((state.meta.demoVersion || 0) >= 3) { await freshenDemo(); return; }
+  if ((state.meta.demoVersion || 0) >= 3) { await freshenDemo(); await demoExams(); return; }
   const now = Date.now();
   for (const [id, name, color] of COURSES) {
     const c: Course = { id, name, color, updatedAt: now };
@@ -163,6 +172,7 @@ export async function seedDemo() {
   const days = [1, 2, 3, 4, 5].map(i => dayKey(now - i * DAY));
   await putLocalMeta({ demoAnchor: now });
   await putMeta({ demoSeeded: true, demoVersion: 3, studyDays: [...new Set([...state.meta.studyDays, ...days])], points: Math.max(state.meta.points, 58) });
+  await demoExams();
 }
 
 export async function removeDemo() {

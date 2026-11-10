@@ -33,6 +33,10 @@ let reopenTab: Tab | null = null; // shown at the top of the Calculate tab after
 let openNoteFn: (id: string) => void = () => {};
 export const setOpenNote = (fn: (id: string) => void) => { openNoteFn = fn; };
 export const boxOpen = () => !!ws;
+/** True once the AI is known to be connected. Until then, quick actions stick to what works offline. */
+export const aiAvailable = () => aiOn === true;
+/** Type a request into the open marker, as if the student had (used by the one-tap actions on selected text). */
+export const runIntent = (said: string) => run(said);
 export const takePendingOpen = () => { const p = pendingOpen; pendingOpen = null; return p; };
 function takeReopenTab() { const t = reopenTab; reopenTab = null; return t; }
 export const setPendingOpen = (id: string) => { pendingOpen = id; };

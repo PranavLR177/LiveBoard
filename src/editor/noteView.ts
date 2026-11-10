@@ -4,10 +4,12 @@ import { Placeholder } from "@tiptap/extensions";
 import Highlight from "@tiptap/extension-highlight";
 import { TaskList, TaskItem } from "@tiptap/extension-list";
 import { Diagram, MarkerMark, MarkerOutput, Pin, repaintAll } from "./extensions";
-import { closeBox, openBox, setOpenNote, setPendingOpen, takePendingOpen, TYPE_INFO } from "./markerBox";
+import { aiAvailable, closeBox, contextActions, openBox, runIntent, setOpenNote, setPendingOpen, takePendingOpen, TYPE_INFO } from "./markerBox";
 import { dropFreeMarker, giveOutputIds, markRange, moveFreeMarker, outputsInDoc, pinIds, setEditor } from "./ops";
 import { courseColor, deleteNote, liveCourses, liveMarkers, markersOf, newCourse, newMarker, note, onChange, onRemote, patchNote, putMarker, putMeta, putNote, reconcilePins, state } from "../store";
-import type { Note } from "../types";
+import type { Marker, Note } from "../types";
+import { fingerprint, gradeMarker } from "../study";
+import { findCandidates, type Candidate } from "./suggest";
 import { $, armButton, debounce, esc, toast, uid } from "../util";
 import { stripMarkers } from "../sync";
 
@@ -26,7 +28,8 @@ export function destroyNote() {
   unsub?.();
   unsub = null;
   if (ed) { ed.destroy(); ed = null; setEditor(null); }
-  document.querySelectorAll(".floatbtn,.railwrap").forEach(e => e.remove());
+  document.querySelectorAll(".floatbtn,.floatmore,.railwrap,.testpill,.readbar,#testStyle").forEach(e => e.remove());
+  (CSS as unknown as { highlights?: Map<string, unknown> }).highlights?.delete("suggest");
 }
 
 const TOOLS: [string, string, (e: Editor) => void, (e: Editor) => boolean][] = [
@@ -57,6 +60,9 @@ export function renderNote(stage: HTMLElement, id: string, goHome: () => void, o
   /** The saved version the editor's content is built on; another tab or device saving a newer one counts as a change underneath. */
   let baseAt = n0.updatedAt;
   let dirty = false;
+  /** Test me: marked passages are covered until tapped. The note can't be edited while it's on. */
+  let testing = false;
+  const shown = new Set<string>();
   const patch = (p: Partial<Note>) => { const done = patchNote(id, p); n = state.notes.get(id) || n; baseAt = n.updatedAt; return done; };
 
   const courses = liveCourses();
@@ -68,20 +74,33 @@ export function renderNote(stage: HTMLElement, id: string, goHome: () => void, o
         <label class="coursesel"><span class="dot" id="cdot" style="background:${courseColor(n.courseId)}"></span>
           <select id="courseSel" aria-label="Course">${courses.map(c => `<option value="${c.id}" ${c.id === n.courseId ? "selected" : ""}>${esc(c.name)}</option>`).join("")}<option value="__new">+ New course…</option></select>
           <input id="newCourse" placeholder="Course name" hidden maxlength="32"></label>
-        <span class="mcount" id="mcount"></span>
         <span class="spacer"></span>
+        <button class="tbtn test" id="testBtn" aria-pressed="false" title="Hide every marked passage and check what you remember" hidden>Test me</button>
         <button class="tbtn drop" id="dropBtn" aria-pressed="false" title="Drop a marker anywhere on the page">+ Marker</button>
         <button class="tbtn ${state.meta.showTools ? "on" : ""}" id="toolsBtn" aria-pressed="${state.meta.showTools}" title="Show classic formatting tools">Aa</button>
         <button class="tbtn" id="delNote">Delete</button>
       </div>
       <div class="toolbar" id="toolbar" ${state.meta.showTools ? "" : "hidden"}>${TOOLS.map((t, i) => `<button data-i="${i}" title="${t[1]}" aria-label="${t[1]}">${esc(t[0])}</button>`).join("")}</div>
       <input class="ptitle" id="ptitle" value="${esc(n.title)}" aria-label="Title" maxlength="140" placeholder="Untitled note">
+      <div class="pulse"><span class="pfp" id="pfp"></span><span class="mcount" id="mcount"></span></div>
       ${backlinks.length ? `<div class="backlinks">Linked from ${backlinks.map(m => { const src = note(m.noteId); return src ? `<button data-open="${src.id}">${esc(src.title)}</button>` : ""; }).join("")}</div>` : ""}
       <div class="hint" id="hint">Select text to mark it, or drop a marker anywhere: tap <b>+ Marker</b>, double-click a margin, or press and hold on the page. Drag a free marker to move it.</div>
+      <div class="sughint" id="sugHint" hidden></div>
       <div class="editorwrap" id="ewrap"><svg class="strings" id="strings" aria-hidden="true"></svg><div id="editor"></div><div class="stringtags" id="stringTags"></div><div class="rail" id="rail" aria-label="Markers on this page"></div></div>
       <button class="tapzone" id="tapzone" aria-label="Add a line at the end">Tap here to keep writing</button>
     </article>`;
 
+  const paper0 = $("#paper", stage)!;
+  paper0.style.setProperty("--cc", courseColor(n.courseId));
+  // a thin bar under the header fills as you read down the note
+  const readbar = document.createElement("div");
+  readbar.className = "readbar";
+  $("#desk")!.appendChild(readbar);
+  // quick actions beside "Place marker": mark the selection and tell the marker what to do in one tap
+  const moreBar = document.createElement("div");
+  moreBar.className = "floatmore";
+  moreBar.hidden = true;
+  document.body.appendChild(moreBar);
   const placeBtn = document.createElement("button");
   placeBtn.className = "floatbtn place";
   placeBtn.hidden = true;
@@ -184,7 +203,7 @@ export function renderNote(stage: HTMLElement, id: string, goHome: () => void, o
       attributes: { class: "body", spellcheck: "true", role: "textbox", "aria-multiline": "true", "aria-label": "Note text" },
       transformPastedHTML: html => html.replace(/data-(pin|marker|marker-output)="[^"]*"/g, "")
     },
-    onUpdate: () => { save(); reconcilePins(id, pinIds()); layoutRail(); updateFloat(); },
+    onUpdate: () => { save(); reconcilePins(id, pinIds()); layoutRail(); updateFloat(); refreshSuggestions(); },
     onSelectionUpdate: () => updateFloat(),
     onBlur: () => setTimeout(updateFloat, 120),
     onFocus: () => updateFloat()
@@ -250,7 +269,9 @@ export function renderNote(stage: HTMLElement, id: string, goHome: () => void, o
     const s = st.selection;
     placeBtn.hidden = true;
     plusBtn.hidden = true;
-    if (!view.hasFocus() && document.activeElement !== placeBtn && document.activeElement !== plusBtn) return;
+    moreBar.hidden = true;
+    if (testing) return;
+    if (!view.hasFocus() && document.activeElement !== placeBtn && document.activeElement !== plusBtn && !moreBar.contains(document.activeElement)) return;
     if (!s.empty) {
       const text = st.doc.textBetween(s.from, s.to, " ").trim();
       if (!text) return;
@@ -260,6 +281,7 @@ export function renderNote(stage: HTMLElement, id: string, goHome: () => void, o
       const mid = (Math.min(a.left, b.left) + Math.max(a.right, b.right)) / 2;
       placeBtn.style.left = Math.max(12, Math.min(innerWidth - w - 12, mid - w / 2)) + "px";
       placeBtn.style.top = (a.top > 70 ? a.top - 46 : b.bottom + 10) + "px";
+      showQuick(text);
       return;
     }
     const $f = s.$from;
@@ -271,24 +293,50 @@ export function renderNote(stage: HTMLElement, id: string, goHome: () => void, o
       plusBtn.style.top = c.top + (c.bottom - c.top) / 2 - 15 + "px";
     }
   }
+  /** One-tap actions for the selected text. With AI they fit what's selected (math gets steps, a definition gets a
+   *  flashcard); without it they're the things a marker can do offline. Each one places the marker and runs in it. */
+  function showQuick(text: string) {
+    const mathy = /^[\d\s.+\-*/^()%×÷,eπ!]+$/.test(text) && /\d\s*[-+*/^×÷]\s*\(?\s*\d/.test(text);
+    const acts: [string, string][] = aiAvailable()
+      ? contextActions({ text } as Marker).slice(0, 3).map(a => [a.replace(/^(Explain this simpler)$/, "Simplify").replace(/ (this|me on this)$/, "").replace(/^Give me an example$/, "Example"), a])
+      : [...(mathy ? [["= Calculate", text] as [string, string]] : []), ["Highlight", "highlight"], ["Remind me tomorrow", "remind me tomorrow"]];
+    moreBar.innerHTML = acts.map(([label, said]) => `<button data-said="${esc(said)}">${esc(label)}</button>`).join("");
+    moreBar.hidden = false;
+    const pr = placeBtn.getBoundingClientRect(), w = moreBar.offsetWidth;
+    if (pr.right + 6 + w <= innerWidth - 8) { moreBar.style.left = pr.right + 6 + "px"; moreBar.style.top = pr.top + "px"; }
+    else { moreBar.style.left = Math.max(8, Math.min(innerWidth - w - 8, pr.left + pr.width / 2 - w / 2)) + "px"; moreBar.style.top = (pr.top > 120 ? pr.top - 42 : pr.bottom + 6) + "px"; }
+  }
+  moreBar.addEventListener("mousedown", e => e.preventDefault());
+  moreBar.addEventListener("click", e => {
+    const said = (e.target as HTMLElement).closest<HTMLElement>("[data-said]")?.dataset.said;
+    if (!said) return;
+    const m = placeFromSelection();
+    if (m) setTimeout(() => runIntent(said), 60);
+  });
   placeBtn.addEventListener("mousedown", e => e.preventDefault());
   plusBtn.addEventListener("mousedown", e => e.preventDefault());
-  placeBtn.onclick = () => {
-    if (!ed) return;
+  /** Turn the selected words (or a given range) into a marker and open it. */
+  function placeFromSelection(range?: { from: number; to: number }) {
+    if (!ed) return null;
+    if (range) ed.commands.setTextSelection(range);
     const { from, to, $from, $to } = ed.state.selection;
-    if ($from.parent !== $to.parent) return toast("Select text within one paragraph to place a marker.");
+    if ($from.parent !== $to.parent) { toast("Select text within one paragraph to place a marker."); return null; }
     let hasPin = false;
     ed.state.doc.nodesBetween(from, to, nd => { if (nd.type.name === "pin") hasPin = true; });
-    if (hasPin || ed.state.doc.rangeHasMark(from, to, ed.schema.marks.marker)) return toast("Markers can't overlap. Select text outside an existing marker.");
+    if (hasPin || ed.state.doc.rangeHasMark(from, to, ed.schema.marks.marker)) { toast("Markers can't overlap. Select text outside an existing marker."); return null; }
     const text = ed.state.doc.textBetween(from, to, " ").trim().slice(0, 2000);
     const m = newMarker(id, text, "question");
     state.markers.set(m.id, m);
     putMarker(m);
     ed.chain().focus().insertContentAt(to, { type: "pin", attrs: { id: m.id } }).setTextSelection({ from, to }).setMark("marker", { id: m.id }).setTextSelection(to + 1).run();
     repaintAll();
+    lightUp();
     placeBtn.hidden = true;
+    moreBar.hidden = true;
     openBox(m.id);
-  };
+    return m;
+  }
+  placeBtn.onclick = () => { placeFromSelection(); };
   plusBtn.onclick = () => {
     if (!ed) return;
     const m = newMarker(id, "", "note");
@@ -305,7 +353,7 @@ export function renderNote(stage: HTMLElement, id: string, goHome: () => void, o
   const setDrop = (on: boolean) => { dropMode = on; dropBtn.setAttribute("aria-pressed", String(on)); dropBtn.classList.toggle("on", on); paperEl.classList.toggle("dropping", on); };
   dropBtn.onclick = e => { e.stopPropagation(); setDrop(!dropMode); if (dropMode) toast("Tap anywhere on the page to drop a marker."); };
   const dropAt = (x: number, y: number) => {
-    if (!ed) return;
+    if (!ed || testing) return;
     const m = newMarker(id, "", "note");
     state.markers.set(m.id, m);
     putMarker(m);
@@ -384,10 +432,144 @@ export function renderNote(stage: HTMLElement, id: string, goHome: () => void, o
   stage.addEventListener("open-marker", onOpenMarker);
   cleanup.push(() => stage.removeEventListener("open-marker", onOpenMarker));
 
+  /* ----- small touches ----- */
+  /** Highlights draw themselves in and marker dots pop, when the note opens and when a marker is placed. */
+  function lightUp() {
+    const el = $("#editor", stage);
+    if (!el) return;
+    el.classList.remove("lighting");
+    void el.offsetWidth;
+    el.classList.add("lighting");
+    setTimeout(() => el.classList.remove("lighting"), 1100);
+  }
+  // Reopen where you left off, and show how far down the note you are.
+  const POS_KEY = "lb-readpos";
+  const readPos = (): Record<string, number> => { try { return JSON.parse(localStorage.getItem(POS_KEY) || "{}") || {}; } catch { return {}; } };
+  const savePos = debounce(() => {
+    try {
+      const all = readPos();
+      delete all[id];
+      if (stage.scrollTop > 40) all[id] = Math.round(stage.scrollTop);
+      const keys = Object.keys(all);
+      keys.slice(0, Math.max(0, keys.length - 60)).forEach(k => delete all[k]);
+      localStorage.setItem(POS_KEY, JSON.stringify(all));
+    } catch { /* private window or storage full: the note just opens at the top */ }
+  }, 300);
+  const onRead = () => {
+    const max = stage.scrollHeight - stage.clientHeight;
+    readbar.style.setProperty("--read", max > 60 ? String(Math.min(1, stage.scrollTop / max)) : "0");
+    savePos();
+  };
+  stage.addEventListener("scroll", onRead, { passive: true });
+  cleanup.push(() => stage.removeEventListener("scroll", onRead));
+
+  /* ----- Test me: cover every marked passage, tap to reveal, then say whether you knew it ----- */
+  const testBtn = $("#testBtn", stage)!;
+  const testStyle = document.createElement("style");
+  testStyle.id = "testStyle";
+  document.head.appendChild(testStyle);
+  let pill: HTMLElement | null = null;
+  const testable = () => markersOf(id).filter(m => m.text && !m.detachedAt && document.querySelector(`#editor .mk[data-marker="${CSS.escape(m.id)}"]`));
+  let known = 0;
+  function paintTest() {
+    testStyle.textContent = [...shown].map(x => `.paper.testing .mk[data-marker="${CSS.escape(x)}"]{color:inherit;background:color-mix(in srgb,var(--tc,var(--mark)) 18%,transparent);box-shadow:none}`).join("");
+    const all = testable().length;
+    testBtn.textContent = testing ? `Done · ${shown.size} of ${all}` : "Test me";
+    testBtn.setAttribute("aria-pressed", String(testing));
+    testBtn.classList.toggle("on", testing);
+  }
+  function setTesting(on: boolean) {
+    if (!ed || on === testing) return;
+    if (on && !testable().length) return toast("Mark a passage first, then Test me hides it.");
+    save.flush();
+    closeBox();
+    testing = on;
+    shown.clear();
+    known = 0;
+    pill?.remove(); pill = null;
+    ed.setEditable(!on, false);
+    paperEl.classList.toggle("testing", on);
+    if (on) { getSelection()?.removeAllRanges(); toast("Marked passages are covered. Tap one to check what you remember."); }
+    paintTest();
+    updateFloat();
+  }
+  testBtn.onclick = () => setTesting(!testing);
+  function revealInTest(mid: string, at: HTMLElement) {
+    pill?.remove(); pill = null;
+    if (shown.has(mid)) return;
+    shown.add(mid);
+    paintTest();
+    const m = state.markers.get(mid);
+    if (!m) return;
+    const r = at.getBoundingClientRect();
+    pill = document.createElement("div");
+    pill.className = "testpill";
+    pill.dataset.type = m.type;
+    pill.setAttribute("role", "group");
+    pill.setAttribute("aria-label", "Did you know it?");
+    pill.innerHTML = `<span>Knew it?</span><button data-g="0">Not yet</button><button data-g="1" class="yes">Knew it</button>`;
+    document.body.appendChild(pill);
+    const w = pill.offsetWidth;
+    pill.style.left = Math.max(8, Math.min(innerWidth - w - 8, r.left)) + "px";
+    pill.style.top = (r.bottom + 8 > innerHeight - 60 ? r.top - 46 : r.bottom + 8) + "px";
+    pill.onclick = async e => {
+      const g = (e.target as HTMLElement).closest<HTMLElement>("[data-g]")?.dataset.g;
+      if (g === undefined) return;
+      pill?.remove(); pill = null;
+      if (g === "1") known++;
+      await gradeMarker(m, g === "1");
+      const all = testable().length;
+      if (shown.size >= all) toast(`All ${all} revealed · you knew ${known}. ${known === all ? "Solid." : "The rest come back in your next recall."}`, 4200);
+    };
+  }
+  const onTestKey = (e: KeyboardEvent) => { if (e.key === "Escape" && testing && !document.querySelector(".mws")) setTesting(false); };
+  document.addEventListener("keydown", onTestKey);
+  cleanup.push(() => document.removeEventListener("keydown", onTestKey));
+
+  /* ----- suggested markers: dashed dots in the margin where a passage looks worth marking ----- */
+  let candidates: Candidate[] = [];
+  const NOSUG = "lb-nosuggest";
+  const sugOff = () => { try { return (JSON.parse(localStorage.getItem(NOSUG) || "[]") as string[]).includes(id); } catch { return false; } };
+  const hl = (CSS as unknown as { highlights?: Map<string, unknown> }).highlights;
+  const refreshSuggestions = debounce(() => {
+    if (!ed) return;
+    candidates = sugOff() || testing || markersOf(id).length >= 12 ? [] : findCandidates(ed);
+    const hint = $("#sugHint", stage);
+    if (hint) {
+      hint.hidden = !candidates.length;
+      hint.innerHTML = candidates.length ? `<span><b>✦ ${candidates.length} passage${candidates.length > 1 ? "s look" : " looks"} worth marking.</b> Tap a dashed dot in the margin to mark it.</span><button id="sugHide">Hide</button>` : "";
+      const hide = $("#sugHide", hint);
+      if (hide) hide.onclick = () => {
+        try { localStorage.setItem(NOSUG, JSON.stringify([...(JSON.parse(localStorage.getItem(NOSUG) || "[]") as string[]).slice(-80), id])); } catch { /* not remembered, only hidden for now */ }
+        candidates = [];
+        hint.hidden = true;
+        layoutRail();
+      };
+    }
+    layoutRail();
+  }, 700);
+  const showCandidate = (c: Candidate | null) => {
+    if (!hl || !ed) return;
+    hl.delete("suggest");
+    if (!c) return;
+    try {
+      const a = ed.view.domAtPos(c.from), b = ed.view.domAtPos(c.to), r = document.createRange();
+      r.setStart(a.node, a.offset); r.setEnd(b.node, b.offset);
+      hl.set("suggest", new (window as unknown as { Highlight: new (...r: Range[]) => unknown }).Highlight(r));
+    } catch { /* the passage moved; the next refresh finds it again */ }
+  };
+
   /* ----- opening markers from the page ----- */
   const edEl = $("#editor", stage)!;
   edEl.addEventListener("click", e => {
     const t = e.target as HTMLElement;
+    if (testing) {
+      const mk = t.closest<HTMLElement>(".mk");
+      e.preventDefault();
+      if (mk?.dataset.marker) revealInTest(mk.dataset.marker, mk);
+      else { pill?.remove(); pill = null; }
+      return;
+    }
     const pinEl = t.closest<HTMLElement>(".pin");
     if (pinEl?.dataset.pin) { e.preventDefault(); if (!pinEl.classList.contains("free")) openBox(pinEl.dataset.pin, pinEl); return; }
     const mk = t.closest<HTMLElement>(".mk");
@@ -413,8 +595,24 @@ export function renderNote(stage: HTMLElement, id: string, goHome: () => void, o
       lastY = y;
       return `<button class="rdot" data-id="${m.id}" data-type="${m.type}" data-mastery="${m.mastery}" style="top:${y}px" title="${esc(TYPE_INFO[m.type].label)}${m.text ? ": " + esc(m.text.slice(0, 60)) : ""}" aria-label="Open ${esc(TYPE_INFO[m.type].label)} marker"></button>`;
     }).join("");
+    // suggestions sit on the same rail as dashed dots, kept clear of the real ones
+    const taken = pins.map(p => p.getBoundingClientRect().top - wrapTop);
+    rail.insertAdjacentHTML("beforeend", candidates.map((c, i) => {
+      let y: number;
+      try { y = ed!.view.coordsAtPos(c.from).top - wrapTop; } catch { return ""; }
+      if (taken.some(t => Math.abs(t - y) < 16)) return "";
+      taken.push(y);
+      return `<button class="rdot ghost" data-sug="${i}" style="top:${y}px" title="Worth marking: ${esc(c.text.slice(0, 70))}" aria-label="Mark this suggested passage: ${esc(c.text.slice(0, 70))}"></button>`;
+    }).join(""));
     layoutStrings();
     const ms = markersOf(id);
+    const pfp = $("#pfp");
+    if (pfp) pfp.innerHTML = fingerprint(id, 24);
+    const tb = $("#testBtn");
+    if (tb) tb.hidden = !testing && !ms.some(m => m.text && !m.detachedAt);
+    const hint0 = $("#hint");
+    if (hint0) hint0.hidden = ms.length > 0; // the how-to line is for a note with no markers yet
+    if (testing) paintTest();
     const mastered = ms.filter(m => m.mastery === 2).length;
     const mc = $("#mcount");
     const lost = ms.filter(m => m.detachedAt);
@@ -494,9 +692,26 @@ export function renderNote(stage: HTMLElement, id: string, goHome: () => void, o
     if (el) document.querySelectorAll(`.string[data-a="${CSS.escape(el.dataset.pin!)}"], .string[data-b="${CSS.escape(el.dataset.pin!)}"]`).forEach(g => g.classList.add("lit"));
   });
 
+  const railEl = $("#rail", stage)!;
+  railEl.addEventListener("pointerover", e => {
+    const g = (e.target as HTMLElement).closest<HTMLElement>(".rdot.ghost");
+    showCandidate(g ? candidates[Number(g.dataset.sug)] : null);
+  });
+  railEl.addEventListener("pointerleave", () => showCandidate(null));
   $("#rail", stage)!.addEventListener("click", e => {
     const b = (e.target as HTMLElement).closest<HTMLElement>(".rdot");
     if (!b) return;
+    if (b.classList.contains("ghost")) {
+      const c = candidates[Number(b.dataset.sug)];
+      showCandidate(null);
+      if (!c || !ed || testing) return;
+      // the text may have shifted since it was found; only mark it if it still reads the same
+      if (ed.state.doc.textBetween(c.from, Math.min(c.to, ed.state.doc.content.size), " ").trim() !== c.text) { refreshSuggestions(); return; }
+      placeFromSelection({ from: c.from, to: c.to });
+      refreshSuggestions();
+      return;
+    }
+    if (testing) return;
     const pinEl = document.querySelector<HTMLElement>(`#editor .pin[data-pin="${CSS.escape(b.dataset.id!)}"]`);
     pinEl?.scrollIntoView({ block: "center", behavior: "smooth" });
     setTimeout(() => openBox(b.dataset.id!, pinEl), 280);
@@ -511,8 +726,12 @@ export function renderNote(stage: HTMLElement, id: string, goHome: () => void, o
   addEventListener("resize", onResize);
   cleanup.push(() => removeEventListener("resize", onResize));
   unsub = onChange(k => { if (k === "markers") { repaintAll(); layoutRail(); } });
-  setTimeout(layoutRail, 50);
+  setTimeout(() => { repaintAll(); layoutRail(); }, 50);
+  lightUp();
+  refreshSuggestions();
   const pend = takePendingOpen();
+  const resumeAt = pend ? 0 : readPos()[id] || 0;
+  if (resumeAt) setTimeout(() => { stage.scrollTop = resumeAt; onRead(); }, 90);
   if (pend) setTimeout(() => {
     const el = document.querySelector<HTMLElement>(`#editor .pin[data-pin="${CSS.escape(pend)}"]`);
     el?.scrollIntoView({ block: "center" });

@@ -6,11 +6,19 @@ LiveBoard installs as an app on iPad, iPhone, Windows and Mac from the browser, 
 
 ## What's in it
 
-**Home: the time dial.** Notes sit around a ring by when you last opened them. The 3 most recent float as large cards, older notes stack in colored folders (This week, This month, Last month, This year, Last year, Older), and folders fan open on hover or when spun under the pointer. Import lecture and Blank page live in the center.
+**Home: the time dial.** Notes sit around a ring by when you last opened them. The 3 most recent float as large cards, older notes stack in colored folders (This week, This month, Last month, then one folder for everything older), and folders fan open on hover or when spun under the pointer. Import and Blank page live in the center hub. The ring around the hub is the time scale: each stretch takes the color of the note or folder in that direction and turns with the dial. Each note card carries a memory fingerprint, one dot per marker, filled by how well you know it. Opening a note grows its card into the page.
 
-**Morning strip.** Shows your streak with the last 7 days, a recall scope (last night, this week, this course), **Start recall**, and your class rank.
+**Morning strip.** Shows your streak (tap it for a 7-day forecast of what comes due), a recall scope (all due, last night, this week, this course), **Start recall**, and your class rank. A course with an exam date in Settings gets a countdown chip with how ready you are (the share of its markers you've mastered) and a **Cram** button that quizzes everything not yet mastered, due or not.
 
-**Recall in the hub.** Questions play inside the dial's center while the ring turns to each question's note. *Got it* pushes a marker out on a growing interval and *Again* brings it back in 10 minutes. Finishing a session counts the day toward your streak.
+**Recall in the hub.** Questions play inside the dial's center while the ring turns to each question's note. You can type what you remember before revealing; the answer then shows which of its key ideas you included and which you missed (worked out on the device), and with the AI connected, **Check with AI** adds a two-sentence verdict. *Got it* pushes a marker out on a growing interval and *Again* brings it back in 10 minutes. Space shows the answer, then 1 and 2 grade it. The end screen lists what's still shaky. Finishing a session counts the day toward your streak.
+
+**Test me.** On any note with marked passages, **Test me** covers every one. Tap a passage to reveal it and say whether you knew it; the answer moves that marker's mastery and next review exactly as recall does. The note can't be edited while it's on.
+
+**One-tap marking.** Selecting text shows **Place marker** plus actions that mark and run in one tap. With the AI they fit the selection (Simplify, Example, Quiz, Show the steps); without it they're Highlight, Remind me tomorrow and Calculate.
+
+**Suggested markers.** Dashed dots in a note's margin point at sentences that look worth marking: definitions, formulas, rules and causes. They're found on the device with pattern matching, nothing is sent anywhere, and nothing is marked until you tap one. **Hide** turns them off for that note.
+
+**The sky.** Under the dial, every marker is a star: grouped by course, joined into a constellation per note, hollow when unsure and bright when mastered, twinkling when due. Links you made between markers cross it as threads. Tap a star to open its marker.
 
 **Markers (the one tool).**
 
@@ -123,6 +131,9 @@ The backend contract (`/api/marker`) and the Supabase tables are plain JSON, so 
 - **Several tabs:** a note open in two tabs updates live in both. If both are typing in the same second, the other tab's version is kept as a copy.
 - **Markers whose passage is deleted** keep everything and show “Source removed”, with a button to put them back.
 - **Math** uses 64-digit precision. A few functions only exist for ordinary numbers, and those results are marked ≈.
+- **Typed recall answers** are compared by key words, so a correct answer in different words can show as missing ideas. It's a prompt for your own judgment (you still choose Got it or Again), and the AI check is optional because it counts toward the daily AI limit.
+- **Suggested markers** use simple patterns and will miss things or point at unimportant sentences. They only read English well.
+- **The card-to-page morph** uses the View Transitions API (Chrome, Edge, Safari 18+). Elsewhere, and with reduced motion on, screens switch instantly.
 - **Leaderboard** points are decided by the server: 10 for “Got it”, 3 for “Again”, once per marker per day. It's still a friendly measure of effort, not proof of knowledge.
 - **Dependencies:** `npm audit` reports 10 low/moderate findings, all in the service-worker build tooling (workbox-build and its glob/minimatch/ejs chain via vite-plugin-pwa). They run only at build time on trusted input and aren't shipped to students. CI fails on any high or critical finding.
 - AI answers arrive all at once. Streaming would make long drafts feel faster.

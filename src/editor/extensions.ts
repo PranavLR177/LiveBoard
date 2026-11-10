@@ -18,9 +18,23 @@ export function paintPin(el: HTMLElement) {
   const id = el.dataset.pin || el.dataset.marker;
   const m = id ? state.markers.get(id) : undefined;
   el.dataset.type = m?.type || "note";
-  el.dataset.mastery = String(m?.mastery ?? 0);
+  const was = el.dataset.mastery, now = String(m?.mastery ?? 0);
+  el.dataset.mastery = now;
+  // a small flash the moment a marker becomes mastered
+  if (was !== undefined && was !== "2" && now === "2" && el.classList.contains("pin")) { el.classList.add("spark"); setTimeout(() => el.classList.remove("spark"), 900); }
+}
+/* Highlights take their marker's type color. The editor redraws highlight spans as you type, which would drop a color
+   set on the span itself, so the colors live in a small stylesheet keyed by marker id. */
+let typeStyle: HTMLStyleElement | null = null;
+function paintTypes() {
+  const ids = new Set<string>();
+  document.querySelectorAll<HTMLElement>("#editor .mk[data-marker]").forEach(el => ids.add(el.dataset.marker!));
+  const css = [...ids].map(id => { const m = state.markers.get(id); return m ? `.mk[data-marker="${CSS.escape(id)}"]{--tc:var(--t-${m.type})}` : ""; }).join("");
+  if (!typeStyle) { typeStyle = document.createElement("style"); typeStyle.id = "mkTypes"; document.head.appendChild(typeStyle); }
+  if (typeStyle.textContent !== css) typeStyle.textContent = css;
 }
 export function repaintAll(root: ParentNode = document) {
+  paintTypes();
   root.querySelectorAll<HTMLElement>("[data-pin],.mk[data-marker]").forEach(paintPin);
   root.querySelectorAll<HTMLElement>(".mout[data-marker-output]").forEach(el => {
     const m = state.markers.get(el.dataset.markerOutput || "");
@@ -115,6 +129,8 @@ export const MarkerOutput = Node.create({
       const content = document.createElement("div");
       content.className = "moutbody";
       dom.append(bar, content);
+      // writing that arrives while the note is open slides in; what was already there when it opened doesn't
+      if (editor.isInitialized && node.attrs.status === "pending") { dom.classList.add("arrive"); setTimeout(() => dom.classList.remove("arrive"), 1200); }
       const render = () => {
         dom.dataset.status = cur.attrs.status;
         dom.dataset.markerOutput = cur.attrs.marker;

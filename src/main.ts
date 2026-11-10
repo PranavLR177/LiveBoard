@@ -1,12 +1,12 @@
 import "./styles.css";
-import { destroyHome, installHomeListeners, renderHome, setFocusNote, homeAlive, inRecall } from "./home/home";
+import { cardFor, destroyHome, installHomeListeners, renderHome, setFocusNote, homeAlive, inRecall } from "./home/home";
 import { destroyNote, flushNote, renderNote } from "./editor/noteView";
 import { fileToHtml } from "./importers";
 import { openSettings } from "./settings";
 import { openSearch } from "./search";
 import { ensureStarterCourse, liveCourses, liveNotes, markersOf, newNote, note, onChange, openStore, putMarker, putMeta, putNote, state, deleteNote } from "./store";
 import { bootOwner, claimSignedOutNotes, initSync, migrateLegacyShared, push, signedOutNotes } from "./sync";
-import { $, debounce, esc, toast } from "./util";
+import { $, debounce, esc, reducedMotion, toast } from "./util";
 import { newMarker } from "./store";
 
 const stage = () => $("#stage")!;
@@ -18,10 +18,26 @@ function route() {
   else showHome();
 }
 
-async function showHome() {
-  await leaveNote();
+/** Change screens with a morph where the browser supports it: the note's card on the dial grows into its page, and back. */
+function morph(update: () => void | Promise<void>) {
+  const start = (document as Document & { startViewTransition?: (cb: () => void | Promise<void>) => unknown }).startViewTransition;
+  if (!start || reducedMotion() || document.visibilityState !== "visible") return void update();
+  start.call(document, update);
+}
+const homeHandlers = () => ({ openNote, newBlank, importFile: () => ($("#fileIn") as HTMLInputElement).click(), openSettings: (s?: string) => openSettings(s, refresh) });
+
+function showHome() {
   if (location.hash.startsWith("#note-")) history.replaceState(null, "", location.pathname + location.search);
-  renderHome(stage(), { openNote, newBlank, importFile: () => ($("#fileIn") as HTMLInputElement).click(), openSettings: s => openSettings(s, refresh) });
+  const from = currentNote;
+  if (!from) { renderHome(stage(), homeHandlers()); return; }
+  morph(async () => {
+    await leaveNote();
+    stage().scrollTop = 0;
+    renderHome(stage(), homeHandlers(), false, true);
+    const card = cardFor(from);
+    if (card) card.style.setProperty("view-transition-name", "note");
+    setTimeout(() => card?.style.removeProperty("view-transition-name"), 700);
+  });
 }
 
 async function leaveNote() {
@@ -37,12 +53,18 @@ async function leaveNote() {
 
 function showNote(id: string) {
   if (!note(id) || note(id)!.deleted) { goHome(); return; }
-  destroyHome();
-  if (currentNote && currentNote !== id) { destroyNote(); }
-  currentNote = id;
-  setFocusNote(id);
-  stage().scrollTop = 0;
-  renderNote(stage(), id, goHome, openNote);
+  const open = () => {
+    destroyHome();
+    if (currentNote && currentNote !== id) { destroyNote(); }
+    currentNote = id;
+    setFocusNote(id);
+    stage().scrollTop = 0;
+    renderNote(stage(), id, goHome, openNote);
+  };
+  const card = homeAlive() ? cardFor(id) : null;
+  if (!card) { open(); return; }
+  card.style.setProperty("view-transition-name", "note");
+  morph(open);
 }
 
 function openNote(id: string) { location.hash = `note-${id}`; }
@@ -77,7 +99,7 @@ async function newBlank() {
 };
 
 /* Re-render the home screen when data changes underneath it (sync pulls, settings edits). */
-const refresh = debounce(() => { if (homeAlive() && !inRecall()) renderHome(stage(), { openNote, newBlank, importFile: () => ($("#fileIn") as HTMLInputElement).click(), openSettings: s => openSettings(s, refresh) }, true); }, 400);
+const refresh = debounce(() => { if (homeAlive() && !inRecall()) renderHome(stage(), homeHandlers(), true); }, 400);
 
 async function seedWelcome() {
   if (state.meta.seeded) return;

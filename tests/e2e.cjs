@@ -286,6 +286,101 @@ const MOCK = intent => {
     await ctx.close();
   }
 
+  /* ---------- study upgrades: forecast, typed recall, Test me, suggestions, one-tap actions, exam cram ---------- */
+  {
+    const { ctx, p } = await setup(1280, 860);
+    await p.goto(BASE);
+    await p.waitForSelector("#dial .folder");
+    await p.waitForTimeout(900);
+    check(/conic-gradient/.test(await p.evaluate(() => document.querySelector("#hubring").style.getPropertyValue("--ring"))), "the hub ring is colored from what's on the dial");
+    await p.click(".streakchip");
+    check((await p.isVisible(".fcpop")) && (await p.$$(".fcpop .fcd")).length === 7, "the streak chip opens a 7-day forecast");
+    await p.keyboard.press("Escape");
+    check(!(await p.isVisible(".fcpop")), "Escape closes the forecast");
+
+    await p.click("#info .openlink");
+    await p.waitForSelector("#editor .pin");
+    await p.waitForTimeout(700);
+    check((await p.$$("#pfp .fp i")).length === 1 && (await p.getAttribute("#pfp .fp i", "data-mastery")) === "0", "the note shows its memory fingerprint");
+    await p.click("#testBtn");
+    await p.waitForTimeout(450); // the cover fades in
+    check(await p.evaluate(() => getComputedStyle(document.querySelector("#editor .mk")).color === "rgba(0, 0, 0, 0)" && !document.querySelector("#editor .ProseMirror").isContentEditable), "Test me covers marked text and locks the note");
+    await p.click("#editor .mk");
+    await p.waitForSelector(".testpill");
+    await p.click(".testpill .yes");
+    await p.waitForTimeout(400);
+    check((await p.getAttribute("#pfp .fp i", "data-mastery")) === "1" && /1 of 1/.test(await p.textContent("#testBtn")), "revealing and answering Knew it raises the marker's mastery");
+    await p.click("#testBtn");
+    check(await p.evaluate(() => document.querySelector("#editor .ProseMirror").isContentEditable && !document.querySelector(".paper.testing")), "leaving Test me unlocks the note");
+
+    await p.click("#tapzone");
+    await p.keyboard.type("Osmosis is defined as the movement of water across a membrane toward the side with more solute.");
+    await p.waitForSelector(".rdot.ghost", { timeout: 5000 });
+    const pinsBefore = (await p.$$("#editor .pin")).length;
+    await p.click(".rdot.ghost");
+    await p.waitForSelector(".mws");
+    check((await p.$$("#editor .pin")).length === pinsBefore + 1 && /Osmosis is defined as/.test(await p.textContent(".wsanchor blockquote")), "tapping a suggested marker marks that sentence and opens it");
+    await p.click("#mClose");
+    await p.waitForTimeout(300);
+
+    await p.click("#tapzone");
+    await p.keyboard.type("Diffusion spreads particles from crowded places to empty ones.");
+    await p.keyboard.down("Shift");
+    for (let i = 0; i < 12; i++) await p.keyboard.press("ArrowLeft");
+    await p.keyboard.up("Shift");
+    await p.waitForSelector(".floatmore button");
+    const quick = await p.$$eval(".floatmore button", e => e.map(x => x.textContent));
+    check(quick.includes("Simplify"), `selected text offers one-tap actions (${quick.join(", ")})`);
+    await p.click(".floatmore button:has-text('Simplify')");
+    await p.waitForSelector("#editor .mout", { timeout: 6000 });
+    check((await p.$$("#editor .pin")).length === pinsBefore + 2, "a one-tap action places the marker and runs it");
+    await p.keyboard.press("Escape");
+    await p.waitForTimeout(300);
+
+    // make the welcome marker due, then recall it from the dial by typing
+    await p.click("#editor .pin");
+    await p.waitForSelector(".mws");
+    await p.click(".wstabs [data-tab='recall']");
+    await p.click(".mws [data-in='0']");
+    await p.click("#mClose");
+    await p.click("#backBtn");
+    await p.waitForSelector("#recallBtn:not([disabled])");
+    await p.click("#recallBtn");
+    await p.waitForSelector("#rAns");
+    await p.fill("#rAns", "markers, you select text and type what you want");
+    await p.keyboard.press("Enter");
+    await p.waitForSelector(".racts .got");
+    check(/\d+ of \d+/.test(await p.textContent(".rscore")) && !!(await p.$(".ra mark.hit")), "a typed answer is compared with the stored one");
+    await p.click("#rCheck");
+    await p.waitForSelector(".rai");
+    check((await p.textContent(".rai")).length > 10, "the optional AI check adds a short verdict");
+    await p.keyboard.press("2");
+    await p.waitForSelector(".donebig");
+    check(true, "pressing 2 grades the answer and finishes recall");
+    await p.click("#doneBtn");
+    await p.waitForTimeout(500);
+    await p.click("#info .openlink");
+    await p.waitForSelector("#editor .pin");
+
+
+    // an exam date on the course brings up the countdown, with a cram session
+    await p.click("#settingsBtn");
+    await p.waitForSelector(".crow .exam input");
+    const soon = new Date(Date.now() + 5 * 864e5), ymd = `${soon.getFullYear()}-${String(soon.getMonth() + 1).padStart(2, "0")}-${String(soon.getDate()).padStart(2, "0")}`;
+    await p.fill(".crow .exam input", ymd);
+    await p.dispatchEvent(".crow .exam input", "change");
+    await p.keyboard.press("Escape");
+    await p.click("#backBtn");
+    await p.waitForSelector(".examchip");
+    check(/5d/.test(await p.textContent(".examchip")), "a course with an exam date shows a countdown chip");
+    await p.click(".examchip");
+    await p.click(".exampop:not([hidden]) [data-cram]");
+    await p.waitForSelector("#reveal");
+    check(/Cram 1 of/i.test(await p.textContent("#info .pill")), "the exam chip starts a cram session for that course");
+    await p.screenshot({ path: `${OUT}/10-cram.png` });
+    await ctx.close();
+  }
+
   await b.close();
   console.log(errs.length ? "\nFAILURES:\n" + errs.join("\n") : "\nALL CHECKS PASSED");
   process.exit(errs.length ? 1 : 0);
