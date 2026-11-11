@@ -4,6 +4,12 @@ A standalone classroom slideshow application under `marker-slides/`. Teachers ma
 
 The original LiveBoard header includes **Log in** for the Student and Teacher account flows and a compact **Join** link for discussion codes. Configure `VITE_LIVEBOARD_SLIDES_URL` in the original app to point at your slideshow deployment. LiveBoard passes its current light or dark palette to the classroom, and the classroom keeps that palette in student and projector links. Student and Teacher are entry modes for the existing email sign-in. Live-room hosting controls still require the room's host capability.
 
+## Presentation library and imports
+
+The home icon in the teacher editor opens a browser-local presentation library. Filter or sort by class, unit, and topic, preview decks, or copy and delete saved decks. The library includes five example decks each for AP Chemistry, AP Calculus AB, and English.
+
+Use **Import files** to create a deck from one PDF, a LiveBoard JSON export, or multiple PNG, JPEG, or WebP images. PDF pages and images become full-slide backgrounds that support point and region markers. Import up to 40 slides. For PowerPoint and Google Slides, export to PDF first.
+
 ## Run and validate
 
 From this directory, run `npm ci` and `npm run dev`. Live classrooms require the D1 database and all migrations in `drizzle/`. Run `npx tsc --noEmit`, `node tests/rooms.mjs`, and `npm run build` to validate.
