@@ -975,3 +975,7 @@ button.moutlabel:hover, .moutsrc:hover { color: var(--tc, var(--ink)); }
 .wsburst i { position: absolute; left: -4px; top: -4px; width: 8px; height: 8px; border-radius: 50%; background: var(--tc, var(--cobalt)); scale: var(--s); animation: spark .62s cubic-bezier(.15, .7, .3, 1) var(--d) both; }
 .wsburst i:nth-child(3n) { border-radius: 2px; background: var(--mark); } .wsburst i:nth-child(4n) { background: var(--g7); }
 @keyframes spark { from { transform: translate(0, 0) rotate(0); opacity: 1; } to { transform: translate(var(--x), var(--y)) rotate(160deg) scale(.2); opacity: 0; } }
+.discussion-join { display:inline-flex; align-items:center; justify-content:center; border:1px solid var(--line); border-radius:99px; background:var(--paper); color:var(--ink); padding:5px 10px; font:600 12px var(--display); text-decoration:none; white-space:nowrap; }
+.discussion-join:hover { border-color:var(--cobalt); color:var(--cobalt); }
+.classroom-link { display:inline-block; margin-bottom:10px; text-decoration:none; }
+@media (max-width:480px) { .top { gap:7px; } .discussion-join { padding-inline:7px; } .top .today { display:none; } }
