@@ -57,6 +57,12 @@ Markers are color-coded by type: writing, question, explanation, math, visual, l
 
 **The learning map.** The sky under the dial opens into a full-screen map: every marker as a star in its note's constellation, beside one column that shows how much is learned overall and by course, plus the streak and what's due this week. Tap a course to see only its part of the sky, a star to open its marker, Esc to fold the map away.
 
+**Hundreds of notes.** The dial never shows more than eight things, however many notes there are: three recent cards, a "more" folder, and one folder per time band. A fuller folder is drawn a little larger and thicker (on a log scale), shows only its newest five files, and offers **See all**: a searchable shelf of everything in it, filterable by course, with cards that get smaller as the count grows and only the first 120 drawn until you ask for more. Checked with 600 notes on the dial and 240 in one week.
+
+**Peek and swipe.** Resting on a marker card under the dial shows a peek inside the marker (the passage, the last thing saved, mastery, next recall). Clicking the card or the peek swings the whole screen away to the right and the note is behind it, with the marker open.
+
+**The marker card.** Larger (500 × 680 where there's room). The Write box is a ruled writing desk that grows as you type, with a word count and a line of encouragement under it and prompts that rotate while it's empty; Ctrl/⌘ + Enter inserts into the note. The selected tab's highlight slides between tabs and each tab's contents step in from the side you moved toward. Keeping, inserting and reaching Mastered get a small burst of sparks.
+
 **Light and dark.** The sun/moon button in the header switches themes, and Settings → Appearance offers Match device, Light or Dark. Dark is the original deep-violet look; light is near-white and quiet, with color kept for courses, folders and markers. The choice is saved per device, not synced.
 
 ## Set up and deploy

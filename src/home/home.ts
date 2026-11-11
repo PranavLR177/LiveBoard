@@ -7,6 +7,7 @@ import { aiHealth, askMarker } from "../ai";
 import { compareAnswer, fingerprint, forecast, gradeMarker, isDue, recallable, recallText, studiedOn, upcomingExams } from "../study";
 import { renderSky } from "./sky";
 import { closeMap, openMap } from "./map";
+import { closeShelf, openShelf } from "./shelf";
 
 /* The home screen: a morning strip over a spinning dial of notes arranged by when they were last opened.
    Recall plays inside the dial's center while the ring turns to each question's note. */
@@ -44,6 +45,9 @@ let handlers: { openNote: (id: string) => void; newBlank: () => void; importFile
 let alive = false;
 let introduced = false; // the 3D rise plays once per launch, not every time you come back to the dial
 let three = false;      // while it plays, cards float above the tilted dial and keep facing you
+let swipeNext = false;  // the next note opens with the page swiping away (set by the marker cards under the dial)
+/** True once, right after a marker card asked for the swipe. */
+export const takeSwipe = () => { const s = swipeNext; swipeNext = false; return s; };
 let diving = false;     // a note is dropping into the hub: the dial stops responding until the page opens
 const off: (() => void)[] = [];
 
@@ -157,13 +161,22 @@ function renderFollow() {
         <span class="ftext">${m.text ? esc(m.text.length > 140 ? m.text.slice(0, 140) + "…" : m.text) : `<em>A blank point · ${esc(TYPE_INFO[m.type].label.toLowerCase())}</em>`}</span>
         <span class="fmeta">${saved} saved item${saved === 1 ? "" : "s"} · ${agoLong(m.updatedAt)} · <b>Open marker ↗</b></span></button>`;
     }).join("")}</div>`;
-  const openMarker = (id: string) => {
+  const openMarker = (id: string, swipe = false) => {
     const m = state.markers.get(id);
     if (!m) return;
+    hidePeek(true);
     setPendingOpen(m.id);
+    swipeNext = swipe;
     handlers?.openNote(m.noteId);
   };
-  el.querySelectorAll<HTMLButtonElement>(".fcard").forEach(b => b.onclick = () => openMarker(b.dataset.m!));
+  el.querySelectorAll<HTMLButtonElement>(".fcard").forEach(b => {
+    b.onclick = () => openMarker(b.dataset.m!, true);
+    // resting on a card shows a peek of what's inside the marker; the peek is clickable too
+    b.addEventListener("pointerenter", e => { if (e.pointerType !== "touch") showPeek(b, id => openMarker(id, true)); });
+    b.addEventListener("pointerleave", () => hidePeek());
+    b.addEventListener("focus", () => { if (b.matches(":focus-visible")) showPeek(b, id => openMarker(id, true), 0); });
+    b.addEventListener("blur", () => hidePeek());
+  });
   const sky = $("#sky")!;
   renderSky(sky, openMarker);
   // the chart is a doorway: tap its background (or the button) and it opens into the full learning map
@@ -202,7 +215,13 @@ const SIZE = [1, 0.8, 0.71, 0.63, 0.56], MORE_SIZE = 0.84;
 /** How far each item reaches over the center circle, as a share of its width: most at the top, fading to none at
  *  the bottom so folders never cover the hub's Import and Blank page buttons. */
 const OVERLAP = 0.14;
-const sizeOf = (f: Item) => f.more ? MORE_SIZE : SIZE[BANDS.indexOf(f.b)] ?? SIZE[SIZE.length - 1];
+/** A folder holding a lot grows a little (on a log scale, so 300 notes is not 30 times 10): it reads as fuller without
+ *  ever outgrowing the cards for more recent work by much. Loose cards are one note each and never change. */
+const volume = (f: Item) => f.loose ? 1 : 1 + Math.min(0.2, Math.log10(Math.max(1, f.ns.length)) * 0.085);
+const sizeOf = (f: Item) => (f.more ? MORE_SIZE : SIZE[BANDS.indexOf(f.b)] ?? SIZE[SIZE.length - 1]) * volume(f);
+/** 0–3: how thick a folder's stack is drawn. */
+const stack = (n: number) => n > 80 ? 3 : n > 20 ? 2 : n > MAXFILES ? 1 : 0;
+const compact = (n: number) => n >= 10000 ? Math.round(n / 1000) + "k" : n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, "") + "k" : String(n);
 /** Distance from the dial's center to an item's center when it sits at `deg` (0 = the pointer). */
 function radiusAt(W: number, deg: number, folder: boolean) {
   const t = deg * Math.PI / 180, cos = Math.cos(t);
@@ -260,10 +279,11 @@ function itemHTML(f: Item, i: number) {
         <span class="ft">${esc(n.title)}</span>${fingerprint(n.id, 10)}<span class="fm">${agoLong(n.openedAt)} · ${mc} marker${mc === 1 ? "" : "s"}</span>${hasDue(n.id) ? '<span class="md"></span>' : ""}</button></div>`;
   }
   const show = f.ns.slice(0, MAXFILES), m = show.length;
-  return `<div class="folder" data-f="${i}" style="--fc:var(${fc[0]});--ft:${fc[1]};--i:${i};--lz:${(0.55 + (i % 4) * 0.17).toFixed(2)}">
+  const big = f.ns.length > MAXFILES;
+  return `<div class="folder" data-f="${i}" data-vol="${stack(f.ns.length)}" style="--fc:var(${fc[0]});--ft:${fc[1]};--i:${i};--lz:${(0.55 + (i % 4) * 0.17).toFixed(2)}">
     <div class="fback"><span class="ftab"></span></div>
     ${show.map((n, k) => `<button class="file" data-n="${n.id}" tabindex="-1" style="--c:${courseColor(n.courseId)};--k:${k};z-index:${10 + m - k}" aria-label="${esc(courseName(n.courseId) + ", " + n.title)}"><span class="ft">${esc(n.title)}</span><span class="fm">${esc(courseName(n.courseId))} · ${agoLong(n.openedAt)}</span>${hasDue(n.id) ? '<span class="md"></span>' : ""}</button>`).join("")}
-    <div class="ffront"><b>${f.more ? `+${f.ns.length} more` : f.label}</b><span>${f.more ? "recently opened" : `${f.ns.length} note${f.ns.length > 1 ? "s" : ""}${f.ns.length > MAXFILES ? ` · top ${MAXFILES}` : ""}`}</span></div></div>`;
+    <div class="ffront"><b>${f.more ? `+${compact(f.ns.length)} more` : f.label}</b>${big ? `<span class="seeall" data-all="${i}" title="See all ${f.ns.length} notes">See all ${compact(f.ns.length)}</span>` : `<span>${f.more ? "recently opened" : `${f.ns.length} note${f.ns.length > 1 ? "s" : ""}`}</span>`}</div></div>`;
 }
 
 /** `keep` re-renders in place (same rotation). `still` skips the spin-in, for when the dial is morphing back from a note. */
@@ -363,7 +383,9 @@ export const cardFor = (noteId: string) => document.querySelector<HTMLElement>(`
 
 export function destroyHome() {
   alive = false;
+  hidePeek(true);
   closeMap(true);
+  closeShelf(true);
   diving = false; three = false;
   cancelAnimationFrame(raf);
   off.splice(0).forEach(f => f());
@@ -513,10 +535,64 @@ function updateInfo() {
     html = `<span class="pill" style="background:var(${fc[0]});color:${fc[1]}">${f.more ? "More recent" : f.label}</span>
       <div class="bignum" style="--a:var(${fc[0]})">${f.ns.length}<small>note${f.ns.length > 1 ? "s" : ""}</small></div>
       <div class="cdots">${cs.slice(0, 8).map(c => `<span title="${esc(courseName(c))}" style="background:${courseColor(c)}"></span>`).join("")}<em>${cs.length} course${cs.length > 1 ? "s" : ""}</em></div>
-      <button class="openlink">Open newest</button>`;
+      <button class="openlink">Open newest</button>${f.ns.length > MAXFILES ? `<button class="alllink" id="hubAll">See all ${compact(f.ns.length)}</button>` : ""}`;
   }
   el.innerHTML = `<div class="infoin">${html}</div>`;
   el.querySelector<HTMLButtonElement>(".openlink")!.onclick = () => handlers?.openNote((n || f.ns[0]).id);
+  const allBtn = el.querySelector<HTMLButtonElement>("#hubAll");
+  if (allBtn) allBtn.onclick = () => showShelf(fi);
+}
+/* ---------- The peek: hover a marker card under the dial to see inside it before opening ---------- */
+let peekTimer = 0, peekFor: string | null = null;
+const plain = (t: string) => t.replace(/^✎\s*/, "").replace(/```[\s\S]*?```/g, " ").replace(/[#*_`>]+/g, "").replace(/\s+/g, " ").trim();
+function showPeek(card: HTMLElement, open: (id: string) => void, delay = 170) {
+  clearTimeout(peekTimer);
+  const id = card.dataset.m!;
+  if (peekFor === id && $("#fpeek")) return;
+  peekTimer = window.setTimeout(() => {
+    const m = state.markers.get(id);
+    if (!m || !card.isConnected) return;
+    $("#fpeek")?.remove();
+    peekFor = id;
+    const n = note(m.noteId);
+    const kept = m.thread.filter(t => t.role !== "user");
+    const lastMsg = kept[kept.length - 1];
+    const inside = m.draft?.trim() ? { tag: "Draft in progress", text: plain(m.draft) } : lastMsg ? { tag: lastMsg.calc ? "Worked out" : lastMsg.role === "self" ? "You wrote" : "Marker said", text: lastMsg.calc ? `${lastMsg.calc} = ${lastMsg.result ?? ""}` : plain(lastMsg.text) } : null;
+    const asked = m.thread.filter(t => t.role === "user").length, links = (m.links?.length || 0) + (m.linkNoteId ? 1 : 0);
+    const when = m.recallOff ? "not in recall" : m.due <= Date.now() ? "due for recall now" : "next recall " + new Date(m.due).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    const p = document.createElement("div");
+    p.id = "fpeek"; p.className = "fpeek"; p.dataset.type = m.type;
+    p.setAttribute("role", "button"); p.setAttribute("aria-label", "Open this marker");
+    p.innerHTML = `<div class="ptop"><span class="ptype"><i></i>${esc(TYPE_INFO[m.type].label)}</span><span class="pmast" data-mastery="${m.mastery}"><i></i>${["Unsure", "Getting it", "Mastered"][m.mastery]}</span><span class="pwhen">${when}</span></div>
+      ${m.text ? `<blockquote>${esc(m.text.length > 300 ? m.text.slice(0, 300) + "…" : m.text)}</blockquote>` : ""}
+      ${inside ? `<div class="pin2"><small>${inside.tag}</small><p>${esc(inside.text.length > 230 ? inside.text.slice(0, 230) + "…" : inside.text)}</p></div>` : `<div class="pin2 empty"><p>Nothing saved in here yet. Open it and think out loud.</p></div>`}
+      <div class="pfoot"><span>${[kept.length ? `${kept.length} saved` : "", asked ? `${asked} asked` : "", links ? `${links} link${links > 1 ? "s" : ""}` : ""].filter(Boolean).join(" · ") || esc(n?.title || "")}</span><b>Open marker<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5L12 8l-3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></b></div>`;
+    document.body.appendChild(p);
+    // above the card when there's room, otherwise below; never off the sides
+    const r = card.getBoundingClientRect(), w = Math.min(Math.max(r.width, 340), innerWidth - 24), h = p.offsetHeight;
+    const floor = ($(".top")?.getBoundingClientRect().bottom ?? 0) + 8, above = r.top - h - 12 >= floor;
+    p.style.width = w + "px";
+    p.style.left = Math.max(12, Math.min(innerWidth - w - 12, r.left + r.width / 2 - w / 2)) + "px";
+    p.style.top = (above ? r.top - h - 12 : Math.min(innerHeight - h - 12, r.bottom + 12)) + "px";
+    p.classList.add(above ? "above" : "below");
+    p.style.setProperty("--ax", Math.round(r.left + r.width / 2 - parseFloat(p.style.left)) + "px");
+    p.addEventListener("pointerenter", () => clearTimeout(peekTimer));
+    p.addEventListener("pointerleave", () => hidePeek());
+    p.addEventListener("click", () => open(id));
+  }, delay);
+}
+function hidePeek(now = false) {
+  clearTimeout(peekTimer);
+  const gone = () => { $("#fpeek")?.remove(); peekFor = null; };
+  if (now) return gone();
+  peekTimer = window.setTimeout(gone, 160);
+}
+/** Everything in one folder, for when it holds more than the dial can show. */
+function showShelf(k: number) {
+  const f = items[k];
+  if (!f || f.loose) return;
+  const fc = FOLDC[BANDS.indexOf(f.b) % FOLDC.length];
+  openShelf({ title: f.more ? "More recent" : f.label, color: `var(${fc[0]})`, ink: fc[1], notes: f.ns, from: G.els[k] ?? null, openNote: id => handlers?.openNote(id) });
 }
 
 function bindDial() {
@@ -526,7 +602,7 @@ function bindDial() {
   d.addEventListener("pointerdown", e => {
     if (diving || e.button > 0 || (e.target as Element).closest(".hub")) return;
     dragging = true; moved = 0; v = 0; last = ang(e);
-    downEl = (e.target as Element).closest<HTMLElement>(".file,.folder");
+    downEl = (e.target as Element).closest<HTMLElement>(".seeall,.file,.folder");
     pid = e.pointerId; d.setPointerCapture(pid); d.classList.add("dragging");
   });
   d.addEventListener("pointermove", e => {
@@ -540,7 +616,8 @@ function bindDial() {
     dragging = false; d.classList.remove("dragging");
     if (moved < 3 && downEl) {
       const fi = Number(downEl.closest<HTMLElement>(".folder")!.dataset.f);
-      if (!R && downEl.classList.contains("file") && (fi === sel || fi === hoverF)) handlers?.openNote(downEl.dataset.n!);
+      if (!R && downEl.classList.contains("seeall")) showShelf(fi);
+      else if (!R && downEl.classList.contains("file") && (fi === sel || fi === hoverF)) handlers?.openNote(downEl.dataset.n!);
       else goTo(fi);
     } else target = snapFrom(rot + (reducedMotion() ? 0 : v * 9));
   };

@@ -1,7 +1,7 @@
 import "./styles.css";
 import { initTheme, isDark, onTheme, toggleTheme } from "./theme";
 initTheme(); // before anything renders, so there is no flash of the other theme
-import { cardFor, destroyHome, diveInto, installHomeListeners, renderHome, setFocusNote, homeAlive, inRecall } from "./home/home";
+import { cardFor, destroyHome, diveInto, takeSwipe, installHomeListeners, renderHome, setFocusNote, homeAlive, inRecall } from "./home/home";
 import { destroyNote, flushNote, renderNote } from "./editor/noteView";
 import { fileToHtml } from "./importers";
 import { openSettings } from "./settings";
@@ -25,6 +25,23 @@ function morph(update: () => void | Promise<void>) {
   const start = (document as Document & { startViewTransition?: (cb: () => void | Promise<void>) => unknown }).startViewTransition;
   if (!start || reducedMotion() || document.visibilityState !== "visible") return void update();
   start.call(document, update);
+}
+/** Opening a marker from the home page: the whole screen swings away to the right like a door, and the note is
+ *  already there behind it. Uses a view transition where there is one; elsewhere the stage slides out, then in. */
+function swipeTo(open: () => void) {
+  const root = document.documentElement;
+  const start = (document as Document & { startViewTransition?: (cb: () => void | Promise<void>) => { finished: Promise<void> } }).startViewTransition;
+  if (start) {
+    root.classList.add("vt-swipe");
+    const done = () => root.classList.remove("vt-swipe");
+    try { start.call(document, open).finished.then(done, done); } catch { done(); open(); }
+    return;
+  }
+  const st = stage();
+  if (!st.animate) return open();
+  const out = st.animate([{ transform: "none", opacity: 1 }, { transform: "perspective(1600px) translateX(105%) rotateY(-24deg)", opacity: 0.5 }], { duration: 300, easing: "cubic-bezier(.6, 0, .8, .3)" });
+  const next = () => { open(); st.animate([{ transform: "scale(.95)", opacity: 0 }, { transform: "none", opacity: 1 }], { duration: 260, easing: "ease-out" }); };
+  out.finished.then(next, next);
 }
 const homeHandlers = () => ({ openNote, newBlank, importFile: () => ($("#fileIn") as HTMLInputElement).click(), openSettings: (s?: string) => openSettings(s, refresh) });
 
@@ -63,6 +80,7 @@ function showNote(id: string) {
     stage().scrollTop = 0;
     renderNote(stage(), id, goHome, openNote);
   };
+  if (homeAlive() && takeSwipe() && !reducedMotion() && document.visibilityState === "visible") { swipeTo(open); return; }
   const card = homeAlive() ? cardFor(id) : null;
   if (!card) { open(); return; }
   const dive = diveInto(id);

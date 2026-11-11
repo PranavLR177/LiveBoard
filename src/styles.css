@@ -476,7 +476,7 @@ button.chip:hover { border-color: color-mix(in srgb, var(--cobalt) 55%, var(--li
 .wstabs button { border: 0; background: none; padding: 13px 10px 11px; font-size: 15px; color: var(--muted); border-bottom: 2.5px solid transparent; white-space: nowrap; }
 .wstabs button:hover { color: var(--ink); }
 .wstabs button { border-radius: 10px 10px 0 0; transition: color .15s, background .15s; }
-.wstabs button[aria-selected="true"] { color: var(--tc); border-bottom-color: var(--tc); font-weight: 600; background: color-mix(in srgb, var(--tc) 9%, transparent); }
+.wstabs button[aria-selected="true"] { color: var(--tc); font-weight: 600; }
 .wsbody { flex: 1; min-height: 0; overflow: auto; padding: 18px 20px 20px; display: flex; flex-direction: column; gap: 12px; }
 .wsbody h3 { margin: 0; font: 700 21px/1.2 var(--display); letter-spacing: -.015em; }
 .wsbody .sub { margin: -6px 0 2px; color: var(--muted); font-size: 14px; }
@@ -804,3 +804,174 @@ button.moutlabel:hover, .moutsrc:hover { color: var(--tc, var(--ink)); }
   .sky.big { flex: none; height: 46vh; min-height: 300px; }
   .mapside { overflow: visible; flex: none; }
 }
+
+/* ---------- Scale: folders that hold a lot, and the shelf that shows all of it ---------- */
+/* a fuller folder shows more sheets behind it */
+.folder[data-vol="1"] .fback { box-shadow: 0 -.32em 0 -.1em color-mix(in srgb, var(--fc) 50%, #000 50%); }
+.folder[data-vol="2"] .fback { box-shadow: 0 -.32em 0 -.1em color-mix(in srgb, var(--fc) 50%, #000 50%), 0 -.62em 0 -.22em color-mix(in srgb, var(--fc) 38%, #000 62%); }
+.folder[data-vol="3"] .fback { box-shadow: 0 -.32em 0 -.1em color-mix(in srgb, var(--fc) 50%, #000 50%), 0 -.62em 0 -.22em color-mix(in srgb, var(--fc) 38%, #000 62%), 0 -.9em 0 -.36em color-mix(in srgb, var(--fc) 28%, #000 72%); }
+.ffront .seeall { pointer-events: auto; align-self: flex-start; opacity: 1; margin-top: .35em; padding: .18em .6em; border-radius: 99px; background: color-mix(in srgb, var(--ft) 16%, transparent); cursor: pointer; transition: background .15s, transform .15s; }
+.ffront .seeall::after { content: " →"; }
+.ffront .seeall:hover { background: color-mix(in srgb, var(--ft) 28%, transparent); transform: translateX(2px); }
+.folder.small .ffront .seeall { display: none; }
+.folder.small.open .ffront .seeall { display: block; font-size: .7em; }
+.alllink { border: 0; background: none; margin-top: -2px; padding: 2px 6px; font: 12px var(--mono); color: var(--muted); text-decoration: underline; text-underline-offset: 3px; }
+.alllink:hover { color: var(--ink); }
+.shelf { position: fixed; left: 0; right: 0; bottom: 0; z-index: 650; display: flex; flex-direction: column; gap: 14px; overflow: auto; padding: 22px max(20px, env(safe-area-inset-right, 0px)) calc(24px + env(safe-area-inset-bottom, 0px)) max(20px, env(safe-area-inset-left, 0px));
+  background: var(--desk); background-image: linear-gradient(180deg, color-mix(in srgb, var(--fc) 16%, transparent), transparent 220px); }
+.shelf > * { width: min(1360px, 100%); margin: 0 auto; flex-shrink: 0; }
+.shelfhead { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 16px; }
+.shelftab { background: var(--fc); color: var(--ft); font: 700 15px var(--display); padding: 7px 16px; border-radius: 12px 12px 12px 4px; box-shadow: 0 8px 20px color-mix(in srgb, var(--fc) 35%, transparent); }
+.shelfttl h2 { margin: 0; font: 700 clamp(22px, 2.4vw, 30px)/1.1 var(--display); letter-spacing: -.02em; }
+.shelfttl b { font-variant-numeric: tabular-nums; }
+.shelfsearch { margin-left: auto; display: flex; align-items: center; gap: 8px; flex: 0 1 320px; border: 1.5px solid var(--line); background: var(--paper); border-radius: 99px; padding: 0 14px; color: var(--muted); transition: border-color .15s, box-shadow .15s; }
+.shelfsearch:focus-within { border-color: var(--fc); box-shadow: 0 0 0 4px color-mix(in srgb, var(--fc) 18%, transparent); }
+.shelfsearch svg { width: 15px; height: 15px; flex: 0 0 auto; }
+.shelfsearch input { flex: 1; min-width: 0; border: 0; background: none; outline: none; padding: 9px 0; font-size: 15px; color: var(--ink); }
+.shelfchips { display: flex; flex-wrap: wrap; gap: 6px; }
+.shelfchips button { display: inline-flex; align-items: center; gap: 6px; border: 1.5px solid var(--line); background: var(--paper); border-radius: 99px; padding: 5px 11px; font: 600 11.5px var(--mono); letter-spacing: .04em; text-transform: uppercase; color: var(--ink); }
+.shelfchips button i { width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
+.shelfchips button small { color: var(--muted); font-weight: 500; }
+.shelfchips button[aria-pressed="true"] { border-color: var(--c, var(--fc)); background: color-mix(in srgb, var(--c, var(--fc)) 14%, var(--paper)); }
+.shelfgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+.shelf.snug .shelfgrid { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; }
+.shelf.dense .shelfgrid { grid-template-columns: repeat(auto-fill, minmax(158px, 1fr)); gap: 8px; }
+.snote { position: relative; display: flex; flex-direction: column; gap: 6px; text-align: left; min-width: 0; background: var(--paper); border: 1.5px solid var(--line); border-top: 4px solid var(--c); border-radius: 14px; padding: 12px 14px 12px; transition: transform .16s cubic-bezier(.2, .8, .2, 1.2), border-color .15s, box-shadow .2s; animation: snotein .4s cubic-bezier(.2, .8, .2, 1) backwards; animation-delay: calc(var(--i) * 14ms + .12s); }
+@keyframes snotein { from { opacity: 0; transform: perspective(700px) translateY(14px) rotateX(-14deg); } }
+.snote:hover { transform: translateY(-3px); border-color: var(--c); box-shadow: 0 12px 26px -12px color-mix(in srgb, var(--c) 60%, transparent); }
+.snote .sc { display: flex; align-items: center; gap: 6px; font: 600 10.5px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.snote .sc i { width: 7px; height: 7px; border-radius: 50%; background: var(--c); flex: 0 0 auto; }
+.snote b { font: 700 16px/1.25 var(--display); letter-spacing: -.01em; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.snote .sm { font: 11px var(--mono); color: var(--muted); margin-top: auto; }
+.snote .sdue { position: absolute; top: 10px; right: 10px; width: 8px; height: 8px; border-radius: 50%; background: var(--mark); }
+.shelf.snug .snote { padding: 10px 12px; } .shelf.snug .snote b { font-size: 14.5px; }
+.shelf.dense .snote { padding: 8px 10px; gap: 4px; border-radius: 11px; border-top-width: 3px; } .shelf.dense .snote b { font-size: 13px; } .shelf.dense .snote .sm { font-size: 10px; }
+.smore { grid-column: 1 / -1; justify-self: center; border: 1.5px solid var(--line); background: var(--paper); border-radius: 99px; padding: 9px 18px; font: 600 14px var(--display); }
+.smore small { font: 11px var(--mono); color: var(--muted); margin-left: 6px; }
+.shelfempty { grid-column: 1 / -1; text-align: center; color: var(--muted); padding: 40px 0; }
+@media (max-width: 640px) { .shelfsearch { order: 5; flex: 1 1 100%; margin-left: 0; } .shelfhead .mapclose { margin-left: auto; } .shelfhead .mapclose kbd { display: none; } }
+
+/* ---------- The peek: a look inside a marker from its card under the dial ---------- */
+.fcard { position: relative; }
+.fpeek { --tc: var(--t-note); position: fixed; z-index: 640; display: flex; flex-direction: column; gap: 10px; padding: 16px 18px 14px; cursor: pointer; text-align: left;
+  background: var(--paper); border: 1.5px solid color-mix(in srgb, var(--tc) 55%, var(--line)); border-radius: 20px;
+  box-shadow: 0 24px 60px -18px color-mix(in srgb, var(--tc) 55%, rgba(10, 12, 30, .6)), 0 4px 14px rgba(10, 12, 30, .18);
+  background-image: radial-gradient(120% 90% at 0% 0%, color-mix(in srgb, var(--tc) 16%, transparent), transparent 60%);
+  transform-origin: var(--ax, 50%) 100%; animation: peekin .26s cubic-bezier(.2, .9, .25, 1.15) both; }
+.fpeek.below { transform-origin: var(--ax, 50%) 0%; }
+.fpeek[data-type="question"] { --tc: var(--t-question); } .fpeek[data-type="explain"] { --tc: var(--t-explain); } .fpeek[data-type="math"] { --tc: var(--t-math); }
+.fpeek[data-type="visual"] { --tc: var(--t-visual); } .fpeek[data-type="link"] { --tc: var(--t-link); } .fpeek[data-type="reminder"] { --tc: var(--t-reminder); }
+@keyframes peekin { from { opacity: 0; transform: perspective(900px) rotateX(-16deg) translateY(12px) scale(.94); } }
+.fpeek.below { animation-name: peekinb; }
+@keyframes peekinb { from { opacity: 0; transform: perspective(900px) rotateX(16deg) translateY(-12px) scale(.94); } }
+.fpeek::after { content: ""; position: absolute; left: calc(var(--ax, 50%) - 8px); bottom: -8px; width: 14px; height: 14px; background: var(--paper); border: 1.5px solid color-mix(in srgb, var(--tc) 55%, var(--line)); border-top: 0; border-left: 0; transform: rotate(45deg); border-radius: 0 0 4px 0; }
+.fpeek.below::after { bottom: auto; top: -8px; transform: rotate(225deg); }
+.fpeek .ptop { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; font: 600 10.5px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.fpeek .ptype { display: inline-flex; align-items: center; gap: 6px; color: var(--tc); }
+.fpeek .ptype i { width: 8px; height: 8px; border-radius: 50%; background: var(--tc); animation: peekdot 1.6s ease-in-out infinite; }
+@keyframes peekdot { 50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--tc) 22%, transparent); } }
+.fpeek .pmast { display: inline-flex; align-items: center; gap: 5px; }
+.fpeek .pmast i { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--tc); box-sizing: border-box; }
+.fpeek .pmast[data-mastery="1"] i { background: linear-gradient(90deg, var(--tc) 50%, transparent 50%); } .fpeek .pmast[data-mastery="2"] i { background: var(--tc); }
+.fpeek .pwhen { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 500; }
+.fpeek blockquote { margin: 0; padding: 1px 0 1px 12px; border-left: 3px solid var(--tc); font: 500 16px/1.42 var(--serif); color: var(--ink); display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.fpeek .pin2 { background: var(--desk); border-radius: 12px; padding: 9px 12px 10px; }
+.fpeek .pin2 small { display: block; font: 600 10px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-bottom: 3px; }
+.fpeek .pin2 p { margin: 0; font-size: 13.5px; line-height: 1.45; color: var(--ink); display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.fpeek .pin2.empty p { color: var(--muted); font-style: italic; }
+.fpeek .pfoot { display: flex; align-items: center; justify-content: space-between; gap: 10px; font: 11px var(--mono); color: var(--muted); }
+.fpeek .pfoot span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fpeek .pfoot b { display: inline-flex; align-items: center; gap: 5px; color: var(--tc); font: 700 13px var(--display); white-space: nowrap; }
+.fpeek .pfoot svg { width: 14px; height: 14px; transition: transform .2s cubic-bezier(.2, .8, .2, 1.4); }
+.fpeek:hover .pfoot svg { transform: translateX(4px); }
+/* Opening from a marker card: the screen swings away to the right and the note is behind it (see swipeTo). */
+.vt-swipe .paper { view-transition-name: none; }
+.vt-swipe::view-transition-old(root), .vt-swipe::view-transition-new(root) { mix-blend-mode: normal; }
+.vt-swipe::view-transition-image-pair(root) { isolation: auto; }
+.vt-swipe::view-transition-old(root) { z-index: 2; transform-origin: 100% 50%; animation: swipeaway .6s cubic-bezier(.65, 0, .25, 1) both; }
+.vt-swipe::view-transition-new(root) { z-index: 1; animation: swipereveal .6s cubic-bezier(.3, .6, .2, 1) both; }
+.vt-swipe::view-transition-group(root) { animation-duration: .6s; }
+@keyframes swipeaway { 0% { transform: perspective(1800px) translateX(0) rotateY(0deg); box-shadow: -40px 0 80px rgba(0, 0, 0, .0); } 25% { transform: perspective(1800px) translateX(-2.5%) rotateY(3deg); }
+  100% { transform: perspective(1800px) translateX(108%) rotateY(-32deg); } }
+@keyframes swipereveal { from { transform: scale(.92); filter: brightness(.55) saturate(.8); } to { transform: none; filter: none; } }
+
+/* ---------- The marker card, livelier ---------- */
+/* Nothing in the card's body may be squeezed: without this the Write box collapsed to a sliver when the tab was full. */
+.wsbody > * { flex-shrink: 0; }
+.wstabs { position: relative; }
+.wstabs button { position: relative; z-index: 1; }
+/* the selected tab's highlight is one piece that slides between tabs */
+.tabink { position: absolute; bottom: 0; height: 100%; pointer-events: none; border-radius: 10px 10px 0 0; background: color-mix(in srgb, var(--tc) 10%, transparent); box-shadow: inset 0 -3px 0 var(--tc); transition: left .36s cubic-bezier(.3, 1.35, .45, 1), width .36s cubic-bezier(.3, 1.35, .45, 1); }
+.wstabs button:active { transform: translateY(1px) scale(.97); }
+/* a new tab's contents step in from the side you moved toward, one piece after another */
+.wsbody.in-r > *, .wsbody.in-l > *, .wsbody.in-up > * { animation: stepin .36s cubic-bezier(.2, .85, .25, 1.1) backwards; }
+.wsbody.in-r > * { --from: 22px 0; } .wsbody.in-l > * { --from: -22px 0; } .wsbody.in-up > * { --from: 0 12px; }
+.wsbody > :nth-child(2) { animation-delay: 35ms; } .wsbody > :nth-child(3) { animation-delay: 70ms; } .wsbody > :nth-child(4) { animation-delay: 105ms; }
+.wsbody > :nth-child(5) { animation-delay: 140ms; } .wsbody > :nth-child(6) { animation-delay: 175ms; } .wsbody > :nth-child(n+7) { animation-delay: 210ms; }
+@keyframes stepin { from { opacity: 0; translate: var(--from, 0 10px); } }
+/* something just saved in the marker pops into the list */
+.wsbody.fresh .wsthread > .ta:not(.thinking):last-of-type, .wsbody.fresh .wsthread > .tq:last-of-type { animation: freshin .5s cubic-bezier(.2, .9, .25, 1.25) backwards; }
+@keyframes freshin { from { opacity: 0; transform: translateY(14px) scale(.92) rotate(-1.2deg); } }
+/* fields: roomy, 16px so phones don't zoom, with a soft ring in the marker's colour */
+.wsbody textarea, .wsbody input, .wsbody select { font-size: 16px; line-height: 1.5; padding: 13px 16px; transition: border-color .15s, box-shadow .2s, background .2s; }
+.wsbody textarea { min-height: 92px; }
+.wsbody textarea:focus, .wsbody input:focus, .wsbody select:focus { box-shadow: 0 0 0 4px color-mix(in srgb, var(--tc) 18%, transparent); }
+.wsbody input.code { font-size: 15px; }
+/* the Write desk: one generous box with a line of company under it */
+.wdesk { display: flex; flex-direction: column; border: 1.5px solid var(--line); border-radius: 18px; background: var(--desk); transition: border-color .15s, box-shadow .2s, transform .2s; overflow: hidden;
+  font-size: 16.5px; }
+.wdesk:focus-within { border-color: var(--tc); box-shadow: 0 0 0 4px color-mix(in srgb, var(--tc) 18%, transparent), 0 14px 30px -18px color-mix(in srgb, var(--tc) 70%, transparent); }
+.wdesk textarea, .wdesk textarea:focus { border: 0; box-shadow: none; border-radius: 0; min-height: 190px; padding: 14px 18px 8px; font: 16.5px/1.6em var(--serif); resize: none;
+  background: linear-gradient(transparent calc(1.6em - 1px), color-mix(in srgb, var(--line) 60%, transparent) 0) local 0 14px / 100% 1.6em; }
+.wdesk textarea::placeholder { color: var(--muted); opacity: .8; font-style: italic; transition: opacity .25s; }
+.wdesk textarea.swap::placeholder { animation: phswap .5s ease-out; }
+@keyframes phswap { from { opacity: 0; } }
+.wdesk.drop { animation: deskdrop .38s cubic-bezier(.2, .9, .25, 1.3); }
+@keyframes deskdrop { 0% { transform: scale(.985) translateY(3px); box-shadow: 0 0 0 6px color-mix(in srgb, var(--tc) 30%, transparent); } }
+.wdfoot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 14px 9px 18px; background: color-mix(in srgb, var(--desk) 82%, var(--paper)); border-top: 1px dashed var(--line); font: 11px var(--mono); color: var(--muted); min-height: 30px; }
+.wmood { display: inline-flex; align-items: center; gap: 6px; }
+.wmood::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--tc); animation: peekdot 2s ease-in-out infinite; }
+.wmood.pop { animation: moodpop .45s cubic-bezier(.2, .9, .25, 1.4); color: var(--tc); }
+@keyframes moodpop { from { transform: translateY(6px) rotate(-3deg); opacity: 0; } }
+.wcount { font-variant-numeric: tabular-nums; transform-origin: 100% 50%; }
+.wcount.bump { animation: countbump .28s cubic-bezier(.2, .9, .25, 1.6); }
+@keyframes countbump { 40% { transform: scale(1.22); color: var(--tc); } }
+/* buttons and chips have some spring to them */
+.btn1, .btn2 { transition: transform .16s cubic-bezier(.2, .9, .25, 1.5), box-shadow .2s, filter .15s; }
+.btn1:hover:not(:disabled) { transform: translateY(-2px); filter: brightness(1.06); box-shadow: 0 12px 24px color-mix(in srgb, var(--tc) 45%, transparent); }
+.btn2:hover { transform: translateY(-2px); border-color: var(--tc); }
+.btn1:active:not(:disabled), .btn2:active { transform: translateY(1px) scale(.96); }
+.btn1 .arr { display: inline-block; transition: transform .22s cubic-bezier(.2, .9, .25, 1.6); }
+.btn1:hover .arr { transform: translate(3px, -3px) scale(1.15); }
+#aGo:hover .arr { transform: translateX(3px) scale(1.15); }
+.tchips button:active { transform: scale(.94) rotate(-1.5deg); }
+.wsbody .card { transition: transform .18s cubic-bezier(.2, .9, .25, 1.3), border-color .15s, box-shadow .2s; }
+.wsbody .card:hover { transform: translateY(-2px) rotate(-.4deg); box-shadow: 0 12px 24px -14px color-mix(in srgb, var(--tc) 70%, transparent); }
+.wsbody .card:hover .ic { animation: icwiggle .5s ease-in-out; }
+.wsbody .card:hover .go { transform: translate(3px, -3px); } .wsbody .card .go { transition: transform .2s cubic-bezier(.2, .9, .25, 1.6); }
+@keyframes icwiggle { 30% { transform: rotate(-12deg) scale(1.15); } 60% { transform: rotate(9deg) scale(1.1); } }
+.mastery button { transition: transform .16s cubic-bezier(.2, .9, .25, 1.6), background .2s, color .2s; }
+.mastery button:active { transform: scale(.92); }
+.mastery button[aria-pressed="true"] { animation: pressed .35s cubic-bezier(.2, .9, .25, 1.5); }
+@keyframes pressed { from { transform: scale(.86); } }
+.result.pop { animation: respop .42s cubic-bezier(.2, .9, .25, 1.4); }
+@keyframes respop { from { transform: scale(.9) translateY(6px); opacity: 0; } }
+/* thinking: the dots, plus a few words about what it's doing */
+.thinking { align-items: center; }
+.thinking .tw { position: relative; margin-left: 6px; height: 1.3em; flex: 1; font: 12px var(--mono); color: var(--muted); }
+.thinking .tw em { position: absolute; left: 0; top: 0; font-style: normal; opacity: 0; animation: twcycle 6s infinite; }
+.thinking .tw em:nth-child(2) { animation-delay: 2s; } .thinking .tw em:nth-child(3) { animation-delay: 4s; }
+@keyframes twcycle { 0% { opacity: 0; transform: translateY(5px); } 5%, 30% { opacity: 1; transform: none; } 35%, 100% { opacity: 0; transform: translateY(-5px); } }
+/* the head: the marker's dot breathes and the passage's rule draws itself in */
+.mws .wshead .tdot { animation: peekdot 2.2s ease-in-out infinite; }
+.wsanchor blockquote { position: relative; border-left: 0; padding-left: 20px; }
+.wsanchor blockquote::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; border-radius: 4px; background: var(--tc); transform-origin: 50% 0; animation: ruledraw .5s .12s cubic-bezier(.2, .8, .2, 1) backwards; }
+@keyframes ruledraw { from { transform: scaleY(0); } }
+.wschips .chipm { animation: stepin .4s cubic-bezier(.2, .9, .25, 1.3) backwards; --from: 0 6px; }
+.wschips .chipm:nth-child(2) { animation-delay: 60ms; } .wschips .chipm:nth-child(3) { animation-delay: 120ms; }
+.mws.dragging { rotate: 1.2deg; scale: 1.012; }
+.mws { transition: rotate .2s, scale .2s; }
+.wsburst { position: fixed; z-index: 2100; pointer-events: none; width: 0; height: 0; }
+.wsburst i { position: absolute; left: -4px; top: -4px; width: 8px; height: 8px; border-radius: 50%; background: var(--tc, var(--cobalt)); scale: var(--s); animation: spark .62s cubic-bezier(.15, .7, .3, 1) var(--d) both; }
+.wsburst i:nth-child(3n) { border-radius: 2px; background: var(--mark); } .wsburst i:nth-child(4n) { background: var(--g7); }
+@keyframes spark { from { transform: translate(0, 0) rotate(0); opacity: 1; } to { transform: translate(var(--x), var(--y)) rotate(160deg) scale(.2); opacity: 0; } }

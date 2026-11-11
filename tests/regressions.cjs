@@ -188,6 +188,54 @@ const BASE = process.env.BASE || "http://localhost:4173";
   await p.waitForSelector(".mws");
   ok(!(await p.$("#mapView")), "a star on the map opens its marker in its note");
 
+  // The marker's Write box is a real writing space (it used to collapse to a sliver), and the count under it follows along.
+  ok((await p.evaluate(() => document.querySelector("#wDraft")?.getBoundingClientRect().height || 0)) >= 150 || (await p.click('.wstabs [data-tab="write"]').then(() => p.evaluate(() => document.querySelector("#wDraft").getBoundingClientRect().height))) >= 150, "the Write box is tall enough to write in");
+  await p.click('.wstabs [data-tab="write"]');
+  await p.fill("#wDraft", "three small words");
+  ok(/3 words/.test(await p.textContent("#wCount")), "the Write box counts words as you type");
+  await p.fill("#wDraft", "");
+  await p.click('.wstabs [data-tab="recall"]');
+  ok(await p.evaluate(() => !!document.querySelector(".wstabs .tabink") && document.querySelector('.wstabs [aria-selected="true"]').dataset.tab === "recall"), "switching tabs moves the highlight to the new tab");
+  await p.keyboard.press("Escape");
+
+  // Under the dial: resting on a marker card peeks inside it, and the peek opens the marker.
+  await p.goto(BASE); await p.waitForSelector(".fcard"); await p.waitForTimeout(2200);
+  await p.evaluate(() => document.querySelector(".fcards").scrollIntoView({ block: "center" }));
+  await p.hover(".fcard");
+  await p.waitForSelector("#fpeek");
+  ok(/Open marker/.test(await p.textContent("#fpeek")), "hovering a marker card shows a peek of the marker");
+  await p.click("#fpeek .ptop");
+  await p.waitForSelector(".mws");
+  ok(!(await p.$("#fpeek")) && /#note-/.test(await p.evaluate(() => location.hash)), "clicking the peek opens the marker in its note");
+  await p.keyboard.press("Escape");
+
+  // Scale: a folder holding far more than the dial shows opens into a shelf of everything, searchable.
+  await p.evaluate(async () => {
+    const db = await new Promise((res, rej) => { const r = indexedDB.open("liveboard"); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+    const all = await new Promise(res => { const r = db.transaction("notes").objectStore("notes").getAll(); r.onsuccess = () => res(r.result); });
+    const base = all.find(n => !n.deleted), now = Date.now(), tx = db.transaction("notes", "readwrite"), st = tx.objectStore("notes");
+    for (let i = 0; i < 240; i++) { const at = now - (1.5 + (i % 50) / 10) * 864e5; st.put({ ...base, id: "bulk-" + i, title: (i === 7 ? "Needle in the stack" : "Bulk note " + i), openedAt: at, updatedAt: at, createdAt: at }); }
+    await new Promise(res => { tx.oncomplete = res; });
+  });
+  await p.goto(BASE); await p.waitForSelector("#folders .folder:not(.loose)"); await p.waitForTimeout(2300);
+  const dialItems = (await p.$$("#folders .folder")).length;
+  ok(dialItems <= 8, `240 extra notes still make at most 8 things on the dial (${dialItems})`);
+  const wk = await p.evaluate(() => [...document.querySelectorAll("#folders .folder:not(.loose)")].findIndex(f => /This week/.test(f.textContent)));
+  { const bx = await (await p.$$("#folders .folder:not(.loose)"))[wk].boundingBox(); await p.mouse.click(bx.x + bx.width / 2, bx.y + bx.height * 0.88); } // select the folder by its front, below its files
+  await p.waitForTimeout(500);
+  if (!(await p.$("#shelf"))) { // the click landed beside the folder's own See all pill: use the hub's instead
+    await p.mouse.move(4, 300);
+    await p.waitForSelector("#hubAll");
+    await p.click("#hubAll");
+  }
+  await p.waitForSelector("#shelf .snote");
+  ok(/24\d/.test(await p.textContent("#shelfN")) && (await p.$$("#shelf .snote")).length === 120, "See all opens a shelf of the whole folder, drawn a screenful at a time");
+  await p.fill("#shelfQ", "needle");
+  await p.waitForFunction(() => document.querySelectorAll("#shelf .snote").length === 1);
+  await p.click("#shelf .snote");
+  await p.waitForSelector("#ptitle");
+  ok((await p.inputValue("#ptitle")) === "Needle in the stack" && !(await p.$("#shelf")), "searching the shelf finds one note among hundreds and opens it");
+
   await b.close();
   console.log(errs.length ? "\nFAILURES:\n" + errs.join("\n") : "\nALL REGRESSIONS PASS");
   process.exit(errs.length ? 1 : 0);

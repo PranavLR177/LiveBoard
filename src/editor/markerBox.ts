@@ -26,6 +26,28 @@ let ws: HTMLElement | null = null;
 let current: Marker | null = null;
 let tab: Tab = "ask";
 let busy = false;
+let promptTimer = 0;   // rotates the Write box's placeholder while it's empty
+/** Shown in turn in the empty Write box, so it reads as an invitation rather than a form field. */
+const PROMPTS = ["What do you want to add here?", "Say it the way you'd text a friend.", "What just clicked?", "What would trip you up on the exam?", "Explain it to yourself from last week.", "One example. Just one.", "What's still fuzzy?"];
+const MOODS: [number, string][] = [[0, "blank page energy"], [1, "warming up"], [12, "on a roll"], [40, "now you're cooking"], [90, "this is turning into a page"], [180, "okay, professor"]];
+const words = (t: string) => (t.trim().match(/\S+/g) || []).length;
+const still = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+/** Restart a one-shot CSS animation on an element. */
+function kick(el: Element | null | undefined, cls: string) {
+  if (!el) return;
+  el.classList.remove(cls); void (el as HTMLElement).offsetWidth; el.classList.add(cls);
+}
+/** A small burst of sparks from an element, in the marker's colour: for the moments worth marking (kept, inserted, mastered). */
+function burst(from: Element | null | undefined) {
+  if (!from || still()) return;
+  const r = from.getBoundingClientRect(), b = document.createElement("div");
+  b.className = "wsburst";
+  b.style.left = r.left + r.width / 2 + "px"; b.style.top = r.top + r.height / 2 + "px";
+  b.style.setProperty("--tc", ws ? getComputedStyle(ws).getPropertyValue("--tc") : "");
+  b.innerHTML = Array.from({ length: 12 }, (_, i) => { const a = (i / 12) * Math.PI * 2 + Math.random() * 0.5, d = 34 + Math.random() * 38; return `<i style="--x:${(Math.cos(a) * d).toFixed(0)}px;--y:${(Math.sin(a) * d).toFixed(0)}px;--s:${(0.6 + Math.random() * 0.8).toFixed(2)};--d:${(Math.random() * 60).toFixed(0)}ms"></i>`; }).join("");
+  document.body.appendChild(b);
+  setTimeout(() => b.remove(), 900);
+}
 let aiOn: boolean | null = null;
 let pendingOpen: string | null = null;
 let lastCalc = "";
@@ -44,6 +66,7 @@ aiHealth().then(h => { aiOn = h.ai; if (ws) render(); });
 
 let opener: HTMLElement | null = null; // focus returns here when the card closes
 export function closeBox() {
+  clearInterval(promptTimer);
   saveDraft.flush();
   if (ws) {
     const el = ws;
@@ -92,8 +115,8 @@ function placeCard(anchor: Element | null) {
   if (!ws) return;
   const vw = innerWidth, vh = Math.round(visualViewport?.height || innerHeight), top0 = 64, gap = 14, edge = 12;
   const minH = Math.min(260, vh - top0 - edge); // never taller than the visible screen (on-screen keyboards shrink it)
-  const W = Math.min(440, vw - edge * 2);
-  let H = Math.min(560, vh - top0 - edge * 2);
+  const W = Math.min(500, vw - edge * 2);
+  let H = Math.min(680, vh - top0 - edge * 2);
   let left: number, top: number;
   let a = anchor?.getBoundingClientRect();
   if (a && W > vw - 2 * edge - 60) {
@@ -185,12 +208,21 @@ function threadHTML(items: [ThreadMsg, number][]) {
     const who = t.role === "self" ? `<span class="who">Your answer</span>` : "";
     const act = t.inserted ? `<span class="mnote">In your note</span>` : (t.text || t.calc) && !t.text.startsWith("⚠") ? `<button class="mlink" data-add="${i}">Add to note ↗</button>` : "";
     return `<div class="ta ${t.role}">${who}${body}${calc}${act}</div>`;
-  }).join("")}${busy ? `<div class="ta thinking"><i></i><i></i><i></i></div>` : ""}</div>`;
+  }).join("")}${busy ? `<div class="ta thinking"><i></i><i></i><i></i><span class="tw" aria-hidden="true"><em>Reading your note</em><em>Connecting the dots</em><em>Writing it down</em></span></div>` : ""}</div>`;
 }
 
 function render() {
   if (!ws || !current) return;
   const m = current;
+  clearInterval(promptTimer);
+  // what was showing before this draw: which tab (so the underline can slide and the panel can come in from that side)
+  // and how much was saved (so only a new item animates in)
+  const same = ws.dataset.mid === m.id;
+  const was = same ? ws.querySelector<HTMLElement>('.wstabs [aria-selected="true"]') : null;
+  const from = was ? { tab: was.dataset.tab as Tab, left: was.offsetLeft, width: was.offsetWidth } : null;
+  const grew = same && m.thread.length > Number(ws.dataset.tl || 0);
+  const scrollWas = same && from?.tab === tab ? ($("#wsBody", ws)?.scrollTop ?? 0) : 0;
+  ws.dataset.mid = m.id; ws.dataset.tl = String(m.thread.length);
   const n = note(m.noteId);
   const linkCount = (m.links || []).length + (m.linkNoteId ? 1 : 0);
   ws.dataset.type = m.type;
@@ -219,6 +251,22 @@ function render() {
     </div>`;
   bindCommon();
   bindTab();
+  // the tab underline slides from where it was; a new tab's content steps in from the side you moved toward
+  const now = ws.querySelector<HTMLElement>('.wstabs [aria-selected="true"]'), tabs = ws.querySelector<HTMLElement>(".wstabs"), bodyEl = $("#wsBody", ws);
+  if (now && tabs) {
+    const ink = document.createElement("i");
+    ink.className = "tabink";
+    const to = { left: now.offsetLeft, width: now.offsetWidth }, start = from && from.tab !== tab && !still() ? from : to;
+    ink.style.left = start.left + "px"; ink.style.width = start.width + "px";
+    tabs.appendChild(ink);
+    if (start !== to) requestAnimationFrame(() => { ink.style.left = to.left + "px"; ink.style.width = to.width + "px"; });
+  }
+  if (bodyEl) {
+    if (from && from.tab !== tab) bodyEl.classList.add(TABS.findIndex(t => t[0] === tab) > TABS.findIndex(t => t[0] === from.tab) ? "in-r" : "in-l");
+    else if (!same) bodyEl.classList.add("in-up");
+    else bodyEl.scrollTop = scrollWas;
+    if (grew) bodyEl.classList.add("fresh");
+  }
 }
 
 function bindCommon() {
@@ -268,9 +316,10 @@ function body(): string {
     case "write": {
       const kept = m.thread.map((t, i) => [t, i] as [ThreadMsg, number]).filter(([t]) => t.role === "self" && t.text.startsWith("✎"));
       return `<h3>Think here. Keep the page clear.</h3><p class="sub">Draft, outline, or collect a thought inside this point.</p>
-        <textarea id="wDraft" data-autofocus rows="7" placeholder="What do you want to add here?">${esc(m.draft || "")}</textarea>
+        <div class="wdesk"><textarea id="wDraft" data-autofocus rows="7" placeholder="${PROMPTS[0]}">${esc(m.draft || "")}</textarea>
+          <div class="wdfoot"><span class="wmood" id="wMood"></span><span class="wcount" id="wCount"></span></div></div>
         <div class="tchips"><button data-tpl="outline">+ Outline</button><button data-tpl="check">+ Checklist</button><button data-tpl="example">+ Worked example</button><button data-tpl="def">+ Definition</button></div>
-        <div class="wsrow"><button class="btn2" id="wKeep">Keep in marker</button><button class="btn1" id="wInsert">Insert into note ↗</button></div>
+        <div class="wsrow"><button class="btn2" id="wKeep">Keep in marker</button><button class="btn1" id="wInsert" title="Ctrl/⌘ + Enter">Insert into note <span class="arr">↗</span></button></div>
         <button class="textlink" id="wNew">↗ Turn this draft into a new note</button>
         ${kept.length ? `<div class="wslabel">Kept in this marker</div>${threadHTML(kept.map(([t, i]) => [{ ...t, text: t.text.replace(/^✎\s*/, "") }, i]))}` : ""}
         ${writtenHTML(m)}`;
@@ -283,7 +332,7 @@ function body(): string {
         <div class="tchips sugg ${items.length ? "compact" : ""}">${contextActions(m).map(s => `<button data-q="${esc(s)}">${esc(s)}</button>`).join("")}</div>
         <form id="aForm" class="askform">
           <textarea id="mIn" data-autofocus rows="3" maxlength="600" placeholder="${m.text ? "Ask about this point, or tell the marker what to do…" : "Draft, outline, summarize, calculate…"}" ${busy ? "disabled" : ""}></textarea>
-          ${aiOn === false ? `<textarea id="aSelf" rows="3" placeholder="Your answer or reasoning (optional)…"></textarea><button class="btn1" id="aGo">Save question + answer</button>` : `<button class="btn1" id="aGo" ${busy ? "disabled" : ""}>Ask ↵</button>`}
+          ${aiOn === false ? `<textarea id="aSelf" rows="3" placeholder="Your answer or reasoning (optional)…"></textarea><button class="btn1" id="aGo">Save question + answer</button>` : `<button class="btn1" id="aGo" ${busy ? "disabled" : ""}>Ask <span class="arr">↵</span></button>`}
         </form>
         <details class="src"><summary>Read surrounding source</summary><p>${esc(ctx.before.slice(-500))} <mark>${esc(m.text || "[this point]")}</mark> ${esc(ctx.after.slice(0, 500))}</p></details>`;
     }
@@ -478,18 +527,42 @@ function bindTab() {
   if (!ws || !current) return;
   const m = current;
   if (tab === "write") {
-    const ta = $("#wDraft", ws) as HTMLTextAreaElement;
-    ta.oninput = () => saveDraft(ta.value);
+    const ta = $("#wDraft", ws) as HTMLTextAreaElement, mood = $("#wMood", ws)!, count = $("#wCount", ws)!;
+    let lastWords = -1;
+    // the box grows with what you write (up to about half the screen), and the line under it keeps you company
+    const fit = () => { ta.style.height = "auto"; ta.style.height = Math.min(Math.max(ta.scrollHeight + 2, 190), Math.round(innerHeight * 0.46)) + "px"; };
+    const tell = () => {
+      const w = words(ta.value);
+      if (w === lastWords) return;
+      const label = [...MOODS].reverse().find(([min]) => w >= min)![1];
+      if (mood.textContent !== label) { mood.textContent = label; if (lastWords >= 0) kick(mood, "pop"); }
+      count.textContent = w ? `${w} word${w === 1 ? "" : "s"}` : "";
+      if (lastWords >= 0 && w > lastWords) kick(count, "bump");
+      lastWords = w;
+    };
+    fit(); tell();
+    ta.oninput = () => { saveDraft(ta.value); fit(); tell(); };
+    ta.onkeydown = e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); ($("#wInsert", ws!) as HTMLButtonElement).click(); } };
+    if (!still()) {
+      let pi = 0;
+      promptTimer = window.setInterval(() => {
+        if (!ta.isConnected) return clearInterval(promptTimer);
+        if (ta.value) return;
+        pi = (pi + 1) % PROMPTS.length; ta.placeholder = PROMPTS[pi]; kick(ta, "swap");
+      }, 3600);
+    }
     ws.querySelectorAll<HTMLButtonElement>("[data-tpl]").forEach(b => b.onclick = () => {
       const t = TEMPLATES[b.dataset.tpl!];
       ta.value = (ta.value.trim() ? ta.value.replace(/\s*$/, "\n\n") : "") + t;
       ta.focus();
       saveDraft(ta.value);
+      fit(); tell(); kick(ta.parentElement, "drop");
     });
     $("#wKeep", ws)!.onclick = async () => {
       const v = ta.value.trim();
       if (!v) return toast("Write something first.");
       saveDraft.flush("");
+      burst($("#wKeep", ws!));
       await update({ draft: "", thread: [...m.thread, msg("self", "✎ " + v)] });
       toast("Kept in this marker.");
     };
@@ -498,6 +571,7 @@ function bindTab() {
       if (!v) return toast("Write something first.");
       if (!insertOutput(m.id, v, { status: "accepted" })) return toast("Couldn't find this marker in the note.");
       saveDraft.flush("");
+      burst($("#wInsert", ws!));
       await update({ draft: "", type: m.type === "question" ? "note" : m.type });
       toast("Added to your note.");
     };
@@ -556,6 +630,7 @@ function bindTab() {
         const result = await evaluate(v);
         lastCalc = `<code>${esc(v)}</code> = <b>${esc(result)}</b>`;
         out.innerHTML = lastCalc;
+        kick(out, "pop");
         await update({ type: m.type === "question" || m.type === "note" ? "math" : m.type, thread: [...m.thread, msg("marker", "", { calc: v, result })] });
       } catch (err) {
         out.textContent = (err as Error).message.replace(/^Undefined symbol (\w+)/, "“$1” isn't a number or function the engine knows");
@@ -594,7 +669,7 @@ function bindTab() {
     const on = $("#rcOn", ws) as HTMLInputElement, q = $("#rcQ", ws) as HTMLTextAreaElement, a = $("#rcA", ws) as HTMLTextAreaElement;
     on.onchange = () => update({ recallOff: !on.checked });
     q.oninput = a.oninput = () => saveQA(q.value.trim(), a.value.trim());
-    ws.querySelectorAll<HTMLButtonElement>(".mastery button").forEach(b => b.onclick = () => update({ mastery: Number(b.dataset.m) as Mastery }));
+    ws.querySelectorAll<HTMLButtonElement>(".mastery button").forEach(b => b.onclick = () => { if (b.dataset.m === "2" && m.mastery !== 2) burst(b); update({ mastery: Number(b.dataset.m) as Mastery }); });
     ws.querySelectorAll<HTMLButtonElement>("[data-in]").forEach(b => b.onclick = () => {
       const d = Number(b.dataset.in);
       const at = d === 0 ? Date.now() - 1000 : (() => { const x = new Date(Date.now() + d * DAY); x.setHours(8, 0, 0, 0); return x.getTime(); })();
