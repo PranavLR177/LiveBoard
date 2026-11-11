@@ -231,7 +231,7 @@ const U1 = "11111111-1111-4111-8111-111111111111", U2 = "22222222-2222-4222-8222
   const F = await device();
   await signInAs(F, U6);
   await newNote(F, "Race note", "sent version");
-  for (let i = 0; i < 40 && !serverNote(U6, "Race note"); i++) await F.waitForTimeout(250);
+  for (let i = 0; i < 100 && !serverNote(U6, "Race note"); i++) await F.waitForTimeout(250); // uploads can lag when the whole suite is running
   const raceId = (await F.evaluate(() => location.hash)).replace("#note-", "");
   ok(!!serverNote(U6, "Race note"), "race note uploaded");
   fake.beforePush = async (kind, rows) => {

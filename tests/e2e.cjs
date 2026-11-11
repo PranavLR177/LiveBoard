@@ -194,6 +194,7 @@ const MOCK = intent => {
     await p.clock.setSystemTime(Date.now() + 26 * 3600e3);
     await p.reload();
     await p.waitForSelector("#recallBtn");
+    await p.click("#scopeBtn");
     await p.click(".scope button[data-s='week']");
     await p.waitForTimeout(150);
     const enabled = await p.isEnabled("#recallBtn");

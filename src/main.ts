@@ -1,7 +1,7 @@
 import "./styles.css";
 import { initTheme, isDark, onTheme, toggleTheme } from "./theme";
 initTheme(); // before anything renders, so there is no flash of the other theme
-import { cardFor, destroyHome, installHomeListeners, renderHome, setFocusNote, homeAlive, inRecall } from "./home/home";
+import { cardFor, destroyHome, diveInto, installHomeListeners, renderHome, setFocusNote, homeAlive, inRecall } from "./home/home";
 import { destroyNote, flushNote, renderNote } from "./editor/noteView";
 import { fileToHtml } from "./importers";
 import { openSettings } from "./settings";
@@ -65,6 +65,12 @@ function showNote(id: string) {
   };
   const card = homeAlive() ? cardFor(id) : null;
   if (!card) { open(); return; }
+  const dive = diveInto(id);
+  if (dive) {
+    // the card drops into the hub and the view follows it; the page is drawn once the hub's light fills the screen
+    dive.then(land => { if (location.hash === `#note-${id}`) open(); else route(); land(); });
+    return;
+  }
   card.style.setProperty("view-transition-name", "note");
   morph(open);
 }

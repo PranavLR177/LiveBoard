@@ -165,6 +165,29 @@ const BASE = process.env.BASE || "http://localhost:4173";
   await p.click('[data-theme-pick="system"]');
   ok((await themeOf()).attr === null, "Settings can set the theme back to match the device");
 
+  // The morning line and the learning map: where to recall from is a word in the heading, and the chart under the dial
+  // opens into a full map with an overall summary, then folds away again.
+  await p.keyboard.press("Escape");
+  await p.goto(BASE); await p.waitForSelector("#mapOpen");
+  await p.waitForTimeout(2200); // the dial's 3D rise
+  ok(!(await p.$("#dial.intro3d")), "the dial's opening animation finishes and hands back to the flat dial");
+  await p.click("#scopeBtn"); await p.click(".scope button[data-s='week']");
+  const scoped = await p.waitForFunction(() => /this week/.test(document.querySelector("#scopeBtn")?.textContent || ""), null, { timeout: 4000 }).then(() => true, () => false);
+  ok(scoped, "the recall scope is chosen from the heading");
+  await p.click("#scopeBtn"); await p.click(".scope button[data-s='due']");
+  await p.click("#mapOpen"); await p.waitForSelector("#mapView #skyBig svg");
+  ok((await p.$$("#skyBig .star")).length >= 2 && /%/.test(await p.textContent(".mringin b")) && (await p.$$(".mcourse")).length >= 1, "the chart opens into the learning map with every marker and an overall summary");
+  await p.click(".mcourse");
+  ok((await p.$$("#skyBig .con.picked")).length >= 1, "tapping a course shows only its part of the map");
+  await p.keyboard.press("Escape");
+  await p.waitForSelector("#mapView", { state: "detached" });
+  ok(true, "Escape closes the map");
+  await p.click("#mapOpen"); await p.waitForSelector("#skyBig .star");
+  await p.waitForTimeout(900);
+  await p.click("#skyBig .star .hit", { force: true });
+  await p.waitForSelector(".mws");
+  ok(!(await p.$("#mapView")), "a star on the map opens its marker in its note");
+
   await b.close();
   console.log(errs.length ? "\nFAILURES:\n" + errs.join("\n") : "\nALL REGRESSIONS PASS");
   process.exit(errs.length ? 1 : 0);

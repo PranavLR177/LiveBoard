@@ -6,6 +6,7 @@ import { setPendingOpen, TYPE_INFO } from "../editor/markerBox";
 import { aiHealth, askMarker } from "../ai";
 import { compareAnswer, fingerprint, forecast, gradeMarker, isDue, recallable, recallText, studiedOn, upcomingExams } from "../study";
 import { renderSky } from "./sky";
+import { closeMap, openMap } from "./map";
 
 /* The home screen: a morning strip over a spinning dial of notes arranged by when they were last opened.
    Recall plays inside the dial's center while the ring turns to each question's note. */
@@ -28,7 +29,7 @@ const ARC_END = 258;
 
 interface Item { b: Band; label: string; ns: Note[]; w: number; loose?: boolean; more?: boolean; span: number; ang: number; W: number; x: number; y: number; near: number; tilt: number }
 /** One recall session. `typed` is what the student wrote from memory for the current question; `missed` collects the ones answered "Again". */
-interface Recall { queue: string[]; i: number; revealed: boolean; got: number; done: boolean; k: number; typed: string; missed: string[]; cram: string | null; ai: string | null; checking: boolean }
+interface Recall { queue: string[]; i: number; revealed: boolean; got: number; done: boolean; k: number; typed: string; missed: string[]; cram: string | null; ai: string | null; checking: boolean; flipped?: boolean }
 
 let items: Item[] = [];
 let rot = 0, target = 0, sel = -1, hoverF = -1, hoverNote: string | null = null, dragging = false, lastDrawn: number | null = null, raf = 0;
@@ -41,6 +42,9 @@ let aiOn = false;
 aiHealth().then(h => { aiOn = h.ai; });
 let handlers: { openNote: (id: string) => void; newBlank: () => void; importFile: () => void; openSettings: (section?: string) => void } | null = null;
 let alive = false;
+let introduced = false; // the 3D rise plays once per launch, not every time you come back to the dial
+let three = false;      // while it plays, cards float above the tilted dial and keep facing you
+let diving = false;     // a note is dropping into the hub: the dial stops responding until the page opens
 const off: (() => void)[] = [];
 
 export const setFocusNote = (id: string | null) => { focusNote = id; };
@@ -73,21 +77,27 @@ async function renderMorning() {
   const greet = (hr < 5 ? "Up late" : hr < 12 ? "Good morning" : hr < 18 ? "Good afternoon" : "Good evening") + (state.meta.displayName ? `, ${state.meta.displayName.split(" ")[0]}` : "");
   const q = queue(), st = streak();
   const cid = curCourseId();
-  const scopeName = { due: "", night: "last night", week: "this week", unit: courseName(cid) }[state.meta.scope];
   const overdue = q.filter(m => m.due < Date.now() - DAY).length;
-  const from = scopeName ? ` from ${esc(scopeName)}` : "";
   const wk = [...Array(7)].map((_, i) => { const back = 6 - i, k = dayKey(Date.now() - back * DAY); return `<i class="${state.meta.studyDays.includes(k) ? "on" : ""} ${back === 0 ? "today" : ""}"></i>`; }).join("");
   const c = course(cid);
   const fc = forecast(), fcMax = Math.max(1, ...fc.map(d => d.n));
   const exams = upcomingExams().slice(0, 2);
-  el.innerHTML = `<div class="greet"><b>${esc(greet)}</b><span>${q.length ? `${q.length} marker${q.length > 1 ? "s" : ""}${from} to recall${overdue ? ` · ${overdue} overdue` : ""}` : doneToday() ? "Today's recall is done" : `Nothing due${from}`}</span></div>
-    <div class="lbwrap"><button class="chip streakchip" data-popbtn="fc" aria-expanded="${pop === "fc"}" title="Study streak: days you finished a recall. Tap for what's coming up."><b>${st}</b><small>day streak</small><span class="wk" aria-hidden="true">${wk}</span></button>
+  // The greeting and what's waiting are the heading. Everything else sits quietly either side of it on one line:
+  // the streak to the left, exams and class to the right. Where you recall from is a word in the sentence.
+  const scopeWord = { due: "everything due", night: "last night", week: "this week", unit: courseName(cid) }[state.meta.scope];
+  const scopePick = `<span class="lbwrap"><button class="scopebtn" id="scopeBtn" data-popbtn="scope" aria-expanded="${pop === "scope"}" title="Choose what to recall from">${esc(scopeWord)}<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      <div class="lbpop scopepop" data-pop="scope" ${pop === "scope" ? "" : "hidden"}><h3>Recall from</h3><div class="scope" role="group" aria-label="Recall from">${(["due", "night", "week", "unit"] as const).map(s => `<button data-s="${s}" aria-pressed="${s === state.meta.scope}">${{ due: "Everything due", night: "Last night", week: "This week", unit: "This course" }[s]}</button>`).join("")}</div></div></span>`;
+  const line = q.length ? `<b class="qn">${q.length}</b> marker${q.length > 1 ? "s" : ""} to recall from ${scopePick}${overdue ? `<span class="od">${overdue} overdue</span>` : ""}`
+    : doneToday() && state.meta.scope === "due" ? `Today's recall is done · ${scopePick}` : `Nothing due from ${scopePick}`;
+  el.innerHTML = `<div class="mside left"><div class="lbwrap"><button class="chip streakchip" data-popbtn="fc" aria-expanded="${pop === "fc"}" title="Study streak: days you finished a recall. Tap for what's coming up."><b>${st}</b><small>day streak</small><span class="wk" aria-hidden="true">${wk}</span></button>
       <div class="lbpop fcpop" data-pop="fc" ${pop === "fc" ? "" : "hidden"}><h3>Coming up · next 7 days</h3>
         <div class="fcbars">${fc.map((d, i) => `<div class="fcd ${i === 0 ? "today" : ""}" title="${d.n} marker${d.n === 1 ? "" : "s"} due ${i === 0 ? "today" : d.day.toLocaleDateString(undefined, { weekday: "long" })}"><b>${d.n || ""}</b><i style="height:${d.n ? Math.max(8, Math.round(56 * d.n / fcMax)) : 3}px"></i><small>${i === 0 ? "Today" : d.day.toLocaleDateString(undefined, { weekday: "narrow" })}</small></div>`).join("")}</div>
-        <div class="note">${studiedOn(Date.now()) ? "Today is done. " : ""}Each time you get one right, it comes back later: a day, then a few days, then a week.</div></div></div>
-    ${exams.map((x, xi) => {
+        <div class="note">${studiedOn(Date.now()) ? "Today is done. " : ""}Each time you get one right, it comes back later: a day, then a few days, then a week.</div></div></div></div>
+    <div class="mhead"><h1 class="greet">${esc(greet)}</h1>
+      <div class="msub"><span class="mline">${line}</span><button class="recallbtn" id="recallBtn" ${q.length ? "" : "disabled"}>${q.length ? `Start recall<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5L12 8l-3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>` : "All caught up"}</button></div></div>
+    <div class="mside right">${exams.map((x, xi) => {
       const left = x.counts[0] + x.counts[1];
-      return `<div class="lbwrap ${xi ? "later" : ""}"><button class="chip examchip" data-popbtn="exam:${x.courseId}" aria-expanded="${pop === "exam:" + x.courseId}" title="${esc(x.name)} exam ${inDays(x.days)}">${ring(x.pct, x.color)}<b>${x.days === 0 ? "Today" : x.days + "d"}</b><small>${esc(x.name)}<span class="xr"> · ${x.pct}% ready</span></small></button>
+      return `<div class="lbwrap ${xi ? "later" : ""}"><button class="chip examchip" data-popbtn="exam:${x.courseId}" aria-expanded="${pop === "exam:" + x.courseId}" title="${esc(x.name)} exam ${inDays(x.days)} · ${x.pct}% ready">${ring(x.pct, x.color)}<b>${x.days === 0 ? "Today" : x.days + "d"}</b><small>${esc(x.name)}</small></button>
       <div class="lbpop exampop" data-pop="exam:${x.courseId}" ${pop === "exam:" + x.courseId ? "" : "hidden"}><h3>${esc(x.name)} exam · ${inDays(x.days)}</h3>
         ${x.markers.length ? `<div class="ebig">${ring(x.pct, x.color, "big")}<span class="epct"><b>${x.pct}%</b>ready</span>
           <div class="ebars">${(["Unsure", "Getting it", "Mastered"] as const).map((l, i) => `<div><span>${l}</span><i><u style="width:${Math.round(100 * x.counts[i] / x.markers.length)}%;background:${i === 2 ? "var(--good)" : i ? x.color : "var(--line)"}"></u></i><b>${x.counts[i]}</b></div>`).join("")}</div></div>
@@ -95,12 +105,10 @@ async function renderMorning() {
           <div class="note">${left ? "Cram quizzes everything in this course you haven't mastered yet, due or not." : "Everything here is mastered. One more pass won't hurt."}</div>`
         : `<div class="note">Place markers in your ${esc(x.name)} notes and your readiness shows up here.</div>`}</div></div>`;
     }).join("")}
-    <div class="scope" role="group" aria-label="Recall from">${(["due", "night", "week", "unit"] as const).map(s => `<button data-s="${s}" aria-pressed="${s === state.meta.scope}">${{ due: "All due", night: "Last night", week: "Week", unit: "Course" }[s]}</button>`).join("")}</div>
-    <button class="recallbtn" id="recallBtn" ${q.length ? "" : "disabled"}>${q.length ? `Start recall <span class="cnt">${q.length}</span>` : "All caught up"}</button>
     <div class="lbwrap" id="lbWrap">${c?.classId && currentUser()
       ? `<button class="chip lbchip" id="lbBtn" data-popbtn="lb" aria-expanded="${pop === "lb"}" aria-controls="lbPop"><b id="lbRank">#–</b><small>in ${esc(c.name)}</small></button><div class="lbpop" id="lbPop" data-pop="lb" ${pop === "lb" ? "" : "hidden"}><h3>${esc(c.name)} · this week</h3><div id="lbRows">Loading…</div></div>`
-      : `<button class="chip lbchip" id="lbJoin"><small>${syncConfigured() ? "Join a class" : "Classes"}</small></button>`}</div>`;
-  el.querySelectorAll<HTMLButtonElement>(".scope button").forEach(b => b.onclick = async () => { await putLocalMeta({ scope: b.dataset.s as "due" }); renderMorning(); });
+      : `<button class="chip lbchip" id="lbJoin"><small>${syncConfigured() ? "Join a class" : "Classes"}</small></button>`}</div></div>`;
+  el.querySelectorAll<HTMLButtonElement>(".scope button").forEach(b => b.onclick = async e => { e.stopPropagation(); pop = null; await putLocalMeta({ scope: b.dataset.s as "due" }); renderMorning(); });
   $("#recallBtn")!.onclick = () => startRecall();
   el.querySelectorAll<HTMLButtonElement>("[data-popbtn]").forEach(b => b.onclick = e => { e.stopPropagation(); setPop(b.dataset.popbtn!); });
   el.querySelectorAll<HTMLButtonElement>("[data-cram]").forEach(b => b.onclick = () => {
@@ -138,7 +146,8 @@ function renderFollow() {
     el.innerHTML = `<div class="followhead"><h2>Follow a thought.</h2></div><p class="followempty">Markers you place show up here, so you can pick a thought back up from anywhere.</p>`;
     return;
   }
-  el.innerHTML = `<div class="followhead"><h2>Follow a thought.</h2><span>${all.length} living point${all.length === 1 ? "" : "s"} in your notes</span></div>
+  el.innerHTML = `<div class="followhead"><h2>Follow a thought.</h2><span>${all.length} living point${all.length === 1 ? "" : "s"} in your notes</span>
+      ${all.filter(m => !m.detachedAt).length >= 2 ? `<button class="mapopen" id="mapOpen" title="See every marker and how you're doing overall">Open your map<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9.5 2.5h4v4M6.5 13.5h-4v-4M13.5 2.5L9 7M2.5 13.5L7 9" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>` : ""}</div>
     <div class="sky" id="sky"></div>
     <div class="fcards">${recent.map(m => {
       const n = note(m.noteId);
@@ -155,7 +164,13 @@ function renderFollow() {
     handlers?.openNote(m.noteId);
   };
   el.querySelectorAll<HTMLButtonElement>(".fcard").forEach(b => b.onclick = () => openMarker(b.dataset.m!));
-  renderSky($("#sky")!, openMarker);
+  const sky = $("#sky")!;
+  renderSky(sky, openMarker);
+  // the chart is a doorway: tap its background (or the button) and it opens into the full learning map
+  const showMap = () => openMap({ from: sky.hidden ? null : sky, openMarker, streak: streak() });
+  sky.addEventListener("click", e => { if (!(e.target as Element).closest(".star")) showMap(); });
+  const mo = $("#mapOpen");
+  if (mo) mo.onclick = showMap;
 }
 
 /* ---------- dial ---------- */
@@ -239,13 +254,13 @@ function itemHTML(f: Item, i: number) {
   const fc = FOLDC[BANDS.indexOf(f.b) % FOLDC.length];
   if (f.loose) {
     const n = f.ns[0], mc = liveMarkers().filter(x => x.noteId === n.id).length;
-    return `<div class="folder loose" data-f="${i}" style="--fc:var(${fc[0]});--i:${i}">
+    return `<div class="folder loose" data-f="${i}" style="--fc:var(${fc[0]});--i:${i};--lz:${(1.25 - (i % 3) * 0.2).toFixed(2)}">
       <button class="file solo" data-n="${n.id}" tabindex="-1" style="--c:${courseColor(n.courseId)};--k:0" aria-label="${esc(courseName(n.courseId) + ", " + n.title)}">
         <span class="fc"><span class="dot" style="background:${courseColor(n.courseId)}"></span>${esc(courseName(n.courseId))}</span>
         <span class="ft">${esc(n.title)}</span>${fingerprint(n.id, 10)}<span class="fm">${agoLong(n.openedAt)} · ${mc} marker${mc === 1 ? "" : "s"}</span>${hasDue(n.id) ? '<span class="md"></span>' : ""}</button></div>`;
   }
   const show = f.ns.slice(0, MAXFILES), m = show.length;
-  return `<div class="folder" data-f="${i}" style="--fc:var(${fc[0]});--ft:${fc[1]};--i:${i}">
+  return `<div class="folder" data-f="${i}" style="--fc:var(${fc[0]});--ft:${fc[1]};--i:${i};--lz:${(0.55 + (i % 4) * 0.17).toFixed(2)}">
     <div class="fback"><span class="ftab"></span></div>
     ${show.map((n, k) => `<button class="file" data-n="${n.id}" tabindex="-1" style="--c:${courseColor(n.courseId)};--k:${k};z-index:${10 + m - k}" aria-label="${esc(courseName(n.courseId) + ", " + n.title)}"><span class="ft">${esc(n.title)}</span><span class="fm">${esc(courseName(n.courseId))} · ${agoLong(n.openedAt)}</span>${hasDue(n.id) ? '<span class="md"></span>' : ""}</button>`).join("")}
     <div class="ffront"><b>${f.more ? `+${f.ns.length} more` : f.label}</b><span>${f.more ? "recently opened" : `${f.ns.length} note${f.ns.length > 1 ? "s" : ""}${f.ns.length > MAXFILES ? ` · top ${MAXFILES}` : ""}`}</span></div></div>`;
@@ -259,7 +274,7 @@ export function renderHome(stage: HTMLElement, h: NonNullable<typeof handlers>, 
   const prevRot = rot, prevTarget = target;
   stage.innerHTML = `<div class="dialwrap"><div class="morning" id="morning"></div>
     <div id="dial" tabindex="0" role="group" aria-roledescription="dial" aria-label="Your notes, arranged by when you last opened them. Use the arrow keys to spin and Enter to open.">
-      <div class="dialglow" aria-hidden="true"></div><div class="ringline" id="ringline"></div><div id="folders"></div><div class="pointer" id="pointer"></div>
+      <div class="dialgrid" aria-hidden="true"></div><div class="dialglow" aria-hidden="true"></div><div class="ringline" id="ringline"></div><div id="folders"></div><div class="pointer" id="pointer"></div>
       <div class="hub" id="hub"><div class="hubring" id="hubring" aria-hidden="true"></div><div class="hubticks" id="hubticks" aria-hidden="true"></div><svg class="hubprog" viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="48" pathLength="100" stroke-dasharray="100" stroke-dashoffset="100"/></svg>
         <div class="info" id="info" aria-live="polite"></div>
         <div class="hubacts">
@@ -283,7 +298,17 @@ export function renderHome(stage: HTMLElement, h: NonNullable<typeof handlers>, 
     if (k < 0) k = 0;
     target = items.length ? -items[k].ang : 0;
     rot = reducedMotion() || still ? target : target + 60;
-    if (!reducedMotion() && !still) { const d = $("#dial")!; d.classList.add("enter"); setTimeout(() => d.classList.remove("enter"), 1400); }
+    if (!reducedMotion() && !still) {
+      const d = $("#dial")!;
+      d.classList.add("enter"); setTimeout(() => d.classList.remove("enter"), 1400);
+      if (!introduced) {
+        // First look: the dial lies edge-on in a faint grid with its notes hovering over it, then swings up to face you.
+        three = true;
+        d.classList.add("intro3d");
+        setTimeout(() => { three = false; d.classList.remove("intro3d"); lastDrawn = null; if (alive && d.isConnected) paint(); }, 1900);
+      }
+    }
+    introduced = true;
   }
   lastDrawn = null;
   if (R) $("#dial")!.classList.add("recall");
@@ -292,11 +317,54 @@ export function renderHome(stage: HTMLElement, h: NonNullable<typeof handlers>, 
   if (items.length) { draw(); lastDrawn = rot; } // placed before the first frame, so a morph from the note page lands on the card
   raf = requestAnimationFrame(loop);
 }
+/** Opening a note from the dial: its card tips and drops into the hub, the hub opens, and the view follows it in
+ *  until the hub's light fills the screen. Resolves with `land`, to call once the note page is drawn: it lifts the
+ *  cover so the page settles into place. Returns null when there's nothing to animate (reduced motion, card off screen). */
+export function diveInto(noteId: string): Promise<() => void> | null {
+  const card = cardFor(noteId), dial = $("#dial"), hub = $("#hub"), st = $("#stage");
+  if (!card || !dial || !hub || !st || diving || three || reducedMotion() || document.visibilityState !== "visible" || !card.animate) return null;
+  const cr = card.getBoundingClientRect(), hr = hub.getBoundingClientRect();
+  if (cr.width < 8 || cr.bottom < 40 || cr.top > innerHeight - 40) return null;
+  diving = true;
+  const folder = card.closest<HTMLElement>(".folder")!;
+  const s = cr.width / (card.offsetWidth || cr.width) || 1;
+  const dx = (hr.left + hr.width / 2 - (cr.left + cr.width / 2)) / s, dy = (hr.top + hr.height / 2 - (cr.top + cr.height / 2)) / s;
+  folder.style.zIndex = "600";
+  card.style.zIndex = "99";
+  st.style.overflow = "hidden";
+  dial.classList.add("diving");
+  $(".dialwrap")?.classList.add("diving");
+  const fill = "forwards" as const;
+  card.animate([
+    { translate: "0 0", scale: "1", rotate: "x 0deg", opacity: 1 },
+    { translate: "0 -0.9em", scale: "1.07", rotate: "x 0deg", opacity: 1, offset: 0.3, easing: "cubic-bezier(.55, 0, .85, .35)" },
+    { translate: `${dx}px ${dy}px`, scale: "0.1", rotate: "x 62deg", opacity: 1, offset: 0.9 },
+    { translate: `${dx}px ${dy}px`, scale: "0.04", rotate: "x 70deg", opacity: 0 }
+  ], { duration: 430, fill });
+  // the camera: the whole dial rushes toward the viewer, centred on the hub, whose inside brightens to the page colour
+  const reach = Math.hypot(Math.max(hr.left + hr.width / 2, innerWidth - hr.left - hr.width / 2), Math.max(hr.top + hr.height / 2, innerHeight - hr.top - hr.height / 2));
+  const zoom = Math.min(26, (reach / (hr.width / 2)) * 1.25);
+  const cam = dial.animate([{ scale: "1" }, { scale: String(zoom) }], { duration: 400, delay: 250, easing: "cubic-bezier(.7, 0, .84, .3)", fill });
+  return cam.finished.then(() => {
+    const cover = document.createElement("div");
+    cover.className = "divecover";
+    document.body.appendChild(cover);
+    diving = false;
+    st.style.overflow = "";
+    return () => {
+      const done = () => cover.remove();
+      cover.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 300, easing: "ease-out", fill }).finished.then(done, done);
+      document.querySelector<HTMLElement>(".paper")?.classList.add("landing");
+    };
+  }, () => { diving = false; st.style.overflow = ""; return () => {}; });
+}
 /** The card (or file in a folder) that stands for a note on the dial, for the open and close morph. */
 export const cardFor = (noteId: string) => document.querySelector<HTMLElement>(`#folders .file[data-n="${CSS.escape(noteId)}"]`);
 
 export function destroyHome() {
   alive = false;
+  closeMap(true);
+  diving = false; three = false;
   cancelAnimationFrame(raf);
   off.splice(0).forEach(f => f());
   R = null;
@@ -382,14 +450,17 @@ function draw() {
   paint();
 }
 function paint() {
+  if (diving) return;
   const rk = R && !R.done ? R.k : -1;
+  // during the 3D rise each card floats off the dial (a little differently per card) and turns back to face the viewer
+  const face = three ? " translateZ(calc(var(--lift) * var(--lz))) rotateY(calc(var(--ry) * -1)) rotateX(calc(var(--rx) * -1))" : "";
   items.forEach((f, i) => {
     const el = G.els[i];
     if (!el) return;
     const open = rk >= 0 ? i === rk : i === sel || i === hoverF;
     const grow = f.loose ? (open ? 1.06 : 1) : open ? Math.min(rk >= 0 ? 1.3 : 9, Math.max(1.04, f.W < 150 ? 150 / f.W : 1)) : 1;
     const sc = (0.92 + 0.08 * f.near) * grow;
-    el.style.transform = `translate(${f.x}px,${f.y}px) translate(-50%,-50%) rotate(${open ? 0 : f.tilt.toFixed(2)}deg) scale(${sc})`;
+    el.style.transform = `translate(${f.x}px,${f.y}px) translate(-50%,-50%)${face} rotate(${open ? 0 : f.tilt.toFixed(2)}deg) scale(${sc})`;
     el.style.zIndex = String(i === hoverF ? 400 : open ? 250 : Math.round(100 + f.near * 50));
     el.style.opacity = String(rk >= 0 ? (i === rk ? 1 : 0.28) : open || f.loose ? 1 : (0.7 + 0.3 * f.near).toFixed(2));
     el.classList.toggle("open", open);
@@ -453,7 +524,7 @@ function bindDial() {
   let last = 0, v = 0, moved = 0, downEl: HTMLElement | null = null, pid: number | null = null;
   const ang = (e: PointerEvent) => { const r = d.getBoundingClientRect(); return Math.atan2(e.clientX - (r.left + r.width / 2), -(e.clientY - (r.top + r.height / 2))) * 180 / Math.PI; };
   d.addEventListener("pointerdown", e => {
-    if (e.button > 0 || (e.target as Element).closest(".hub")) return;
+    if (diving || e.button > 0 || (e.target as Element).closest(".hub")) return;
     dragging = true; moved = 0; v = 0; last = ang(e);
     downEl = (e.target as Element).closest<HTMLElement>(".file,.folder");
     pid = e.pointerId; d.setPointerCapture(pid); d.classList.add("dragging");
@@ -477,11 +548,25 @@ function bindDial() {
   d.addEventListener("pointercancel", up);
   const folders = $("#folders")!;
   folders.addEventListener("pointerover", e => {
-    if (dragging || e.pointerType === "touch" || R) return;
+    if (dragging || diving || e.pointerType === "touch" || R) return;
     const fo = (e.target as Element).closest<HTMLElement>(".folder"), fl = (e.target as Element).closest<HTMLElement>(".file");
     const fi = fo ? Number(fo.dataset.f) : -1, nn = fl ? fl.dataset.n! : null;
     if (fi !== hoverF || nn !== hoverNote) { hoverF = fi; hoverNote = nn; paint(); updateInfo(); }
   });
+  // a loose card leans toward the pointer, like a card held by its far edge
+  let tilted: HTMLElement | null = null;
+  const untilt = () => { tilted?.style.removeProperty("--tx"); tilted?.style.removeProperty("--ty"); tilted = null; };
+  folders.addEventListener("pointermove", e => {
+    if (e.pointerType === "touch" || dragging || diving || reducedMotion()) return untilt();
+    const c = (e.target as Element).closest<HTMLElement>(".file.solo");
+    if (c !== tilted) untilt();
+    if (!c) return;
+    const r = c.getBoundingClientRect(), px = (e.clientX - r.left) / r.width - 0.5, py = (e.clientY - r.top) / r.height - 0.5;
+    c.style.setProperty("--tx", (-py * 9).toFixed(2) + "deg");
+    c.style.setProperty("--ty", (px * 11).toFixed(2) + "deg");
+    tilted = c;
+  });
+  folders.addEventListener("pointerleave", untilt);
   folders.addEventListener("pointerleave", () => { if (hoverF !== -1) { hoverF = -1; hoverNote = null; paint(); updateInfo(); } });
   let acc = 0;
   d.addEventListener("wheel", e => { e.preventDefault(); acc += e.deltaY + e.deltaX; if (Math.abs(acc) > 50) { goTo(sel + Math.sign(acc)); acc = 0; } }, { passive: false });
@@ -532,7 +617,9 @@ function showRecall() {
   // If the student typed an answer first, show which of the stored answer's key ideas they included.
   const cmp = R.revealed && R.typed ? compareAnswer(R.typed, a) : null;
   const strong = cmp ? cmp.total > 0 && cmp.hit / cmp.total >= 0.6 : true;
-  el.innerHTML = `<div class="infoin"><div class="rtop"><span class="pill" style="background:${courseColor(n.courseId)}">${R.cram ? "Cram" : "Recall"} ${R.i + 1} of ${R.queue.length}</span><button class="rx" aria-label="End recall" title="End recall (Esc)">×</button></div>
+  const flip = R.revealed && !R.flipped; // the card turns over once, when the answer is first shown
+  if (R.revealed) R.flipped = true;
+  el.innerHTML = `<div class="infoin${flip ? " flip" : ""}"><div class="rtop"><span class="pill" style="background:${courseColor(n.courseId)}">${R.cram ? "Cram" : "Recall"} ${R.i + 1} of ${R.queue.length}</span><button class="rx" aria-label="End recall" title="End recall (Esc)">×</button></div>
     <div class="rq">${esc(q)}</div><div class="rsrc">${esc(courseName(n.courseId))} · ${esc(n.title)}</div>
     ${R.revealed
       ? `${R.typed ? `<div class="ryou"><small>You wrote</small>${esc(R.typed)}</div>` : ""}
@@ -581,7 +668,7 @@ async function grade(m: Marker, good: boolean) {
   await gradeMarker(m, good);
   if (good) R.got++; else R.missed.push(m.id);
   R.i++;
-  R.revealed = false;
+  R.revealed = false; R.flipped = false;
   R.typed = "";
   R.ai = null;
   R.checking = false;

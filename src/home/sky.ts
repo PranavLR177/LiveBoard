@@ -9,7 +9,7 @@ import { esc } from "../util";
 
 const MASTERY = ["Unsure", "Getting it", "Mastered"];
 const MAX_STARS = 320;
-let ro: ResizeObserver | null = null;
+const ros = new WeakMap<HTMLElement, ResizeObserver>(); // one per sky: the small chart and the full map can both be up
 
 /** A repeatable random number generator from a string, so the sky looks the same every time it's drawn. */
 function seeded(key: string) {
@@ -18,27 +18,31 @@ function seeded(key: string) {
   return () => { h = Math.imul(h ^ (h >>> 16), 2246822507); h = Math.imul(h ^ (h >>> 13), 3266489909); return ((h ^= h >>> 16) >>> 0) / 4294967296; };
 }
 
-export function renderSky(el: HTMLElement, open: (id: string) => void) {
-  ro?.disconnect();
-  ro = null;
+/** `tall` draws the full-size map: it fills whatever height its box has, spreads constellations out and names more of them. */
+export function renderSky(el: HTMLElement, open: (id: string) => void, opts: { tall?: boolean } = {}) {
+  ros.get(el)?.disconnect();
+  ros.delete(el);
+  const tall = !!opts.tall;
   const all = liveMarkers().filter(m => !m.detachedAt).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, MAX_STARS);
   if (all.length < 2) { el.hidden = true; el.innerHTML = ""; return; }
   el.hidden = false;
-  let lastW = 0;
+  let lastW = 0, lastH = 0;
   const draw = () => {
-    const W = Math.round(el.clientWidth);
-    if (!W || Math.abs(W - lastW) < 8) return;
-    lastW = W;
-    paint(el, all, W, open);
+    const W = Math.round(el.clientWidth), Hb = Math.round(el.clientHeight);
+    if (!W || (Math.abs(W - lastW) < 8 && (!tall || Math.abs(Hb - lastH) < 8))) return;
+    lastW = W; lastH = Hb;
+    paint(el, all, W, open, tall);
   };
   draw();
-  ro = new ResizeObserver(draw);
+  const ro = new ResizeObserver(draw);
   ro.observe(el);
+  ros.set(el, ro);
 }
 
-function paint(el: HTMLElement, all: Marker[], W: number, open: (id: string) => void) {
-  const H = Math.round(Math.max(200, Math.min(300, W * 0.25)));
-  const top = 30, bottom = H - 40;
+function paint(el: HTMLElement, all: Marker[], W: number, open: (id: string) => void, tall: boolean) {
+  const H = tall ? Math.max(280, Math.round(el.clientHeight)) : Math.round(Math.max(200, Math.min(300, W * 0.25)));
+  const k = tall ? Math.min(1.9, Math.max(1.15, H / 300)) : 1; // how much the full map spreads things out
+  const top = tall ? 46 : 30, bottom = H - (tall ? 56 : 40);
   // course → note → markers (oldest first, so a constellation grows in the order it was marked)
   const byCourse = new Map<string, Map<string, Marker[]>>();
   for (const m of [...all].sort((a, b) => a.createdAt - b.createdAt)) {
@@ -56,7 +60,7 @@ function paint(el: HTMLElement, all: Marker[], W: number, open: (id: string) => 
   courses.forEach((c, ci) => {
     // neighbouring courses sit a little higher and lower, so the sky doesn't read as one straight row
     const slot = W * weights[ci] / total, cx = x0 + slot / 2, cy = (top + bottom) / 2 + (ci % 2 ? 1 : -1) * (bottom - top) * 0.16, color = courseColor(c.cid);
-    const rx = Math.max(10, slot * 0.3), ry = (bottom - top) * 0.26;
+    const rx = Math.max(10, slot * 0.3), ry = (bottom - top) * (tall ? 0.3 : 0.26);
     const noteList = [...c.notes];
     noteList.forEach(([nid, ms], j) => {
       const rnd = seeded(nid);
@@ -69,21 +73,21 @@ function paint(el: HTMLElement, all: Marker[], W: number, open: (id: string) => 
         pts.push([x, y]);
         pos.set(m.id, { x, y });
         heading += (rnd() - 0.5) * 1.9;
-        const step = 24 + rnd() * 18;
+        const step = (24 + rnd() * 18) * k;
         x += Math.cos(heading) * step; y += Math.sin(heading) * step * 0.85;
       });
       const stars = ms.map((m, k) => {
-        const [sx, sy] = pts[k], r = 4 + Math.min(3, m.thread.length * 0.5 + (m.links?.length || 0) * 0.4);
+        const [sx, sy] = pts[k], r = (4 + Math.min(3, m.thread.length * 0.5 + (m.links?.length || 0) * 0.4)) * (tall ? 1.35 : 1);
         return `<g class="star${isDue(m) && recallable(m) ? " due" : ""}" data-m="${m.id}" data-type="${m.type}" data-mastery="${m.mastery}" style="--tw:${(rnd() * 3).toFixed(2)}s"><circle class="hit" cx="${sx.toFixed(1)}" cy="${sy.toFixed(1)}" r="13"/><circle class="dot" cx="${sx.toFixed(1)}" cy="${sy.toFixed(1)}" r="${r.toFixed(1)}"/></g>`;
       }).join("");
       // the note's name sits under its lowest star; with a crowded sky it only shows for the constellation you point at
       const low = pts.reduce((a, b) => (b[1] > a[1] ? b : a)), title = note(nid)?.title || "";
-      const shown = title.length > 26 ? title.slice(0, 25) + "…" : title, lw = shown.length * 5.6 + 10;
-      const lx = Math.min(Math.max(low[0], lw / 2 + 4), W - lw / 2 - 4), ly = low[1] + 20;
-      const clash = noteCount > 14 || placed.some(p => Math.abs(p.y - ly) < 14 && Math.abs(p.x - lx) < (p.w + lw) / 2);
+      const shown = title.length > 26 ? title.slice(0, 25) + "…" : title, lw = shown.length * (tall ? 6.6 : 5.6) + 10;
+      const lx = Math.min(Math.max(low[0], lw / 2 + 4), W - lw / 2 - 4), ly = low[1] + (tall ? 26 : 20);
+      const clash = noteCount > (tall ? 44 : 14) || placed.some(p => Math.abs(p.y - ly) < 14 && Math.abs(p.x - lx) < (p.w + lw) / 2);
       if (!clash) placed.push({ x: lx, y: ly, w: lw });
       const name = `<text class="${clash ? "quiet" : ""}" x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle">${esc(shown)}</text>`;
-      body += `<g class="con" data-n="${nid}" style="--c:${color}">${pts.length > 1 ? `<polyline points="${pts.map(p => p.map(v => v.toFixed(1)).join(",")).join(" ")}"/>` : ""}${name}${stars}</g>`;
+      body += `<g class="con" data-n="${nid}" data-c="${esc(c.cid)}" style="--c:${color};--ci:${j + ci}">${pts.length > 1 ? `<polyline points="${pts.map(p => p.map(v => v.toFixed(1)).join(",")).join(" ")}"/>` : ""}${name}${stars}</g>`;
     });
     if (slot > courseName(c.cid).length * 6.6 + 22) labels += `<span style="left:${(100 * cx / W).toFixed(2)}%;--c:${color}"><i></i>${esc(courseName(c.cid))}</span>`;
     x0 += slot;
@@ -108,7 +112,7 @@ function paint(el: HTMLElement, all: Marker[], W: number, open: (id: string) => 
     <div class="skylabels" aria-hidden="true">${labels}</div>
     <div class="skykey" aria-hidden="true"><span><i data-mastery="0"></i>unsure</span><span><i data-mastery="1"></i>getting it</span><span><i data-mastery="2"></i>mastered</span>${threads ? `<span><i class="ln"></i>your links</span>` : ""}</div>
     <div class="skytip" id="skyTip" hidden></div>`;
-  el.style.height = H + "px";
+  if (!tall) el.style.height = H + "px";
 
   const svg = el.querySelector("svg")!, tip = el.querySelector<HTMLElement>("#skyTip")!;
   const byId = new Map(all.map(m => [m.id, m]));

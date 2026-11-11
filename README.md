@@ -51,6 +51,12 @@ Markers are color-coded by type: writing, question, explanation, math, visual, l
 **Classes:** share a course as a class with a 6-character code, and classmates who join appear on a weekly leaderboard built from recall points.
 **Backup:** download and restore a JSON backup from Settings.
 
+**The morning line.** Above the dial, the greeting and how many markers are waiting are the heading. Where you recall from is a word in that sentence (tap it to change). The streak sits to the left and exams and your class to the right, each opening its own detail.
+
+**Depth and motion.** On launch the dial lies edge-on in a faint grid with its notes hovering over it, then swings up to face you (once per launch). Opening a note from the dial drops its card into the hub and the view follows it in, landing on the page. An open folder fans its files back with depth, loose cards lean toward the pointer, marker cards and recall answers turn into place. All of it is skipped when the device asks for reduced motion.
+
+**The learning map.** The sky under the dial opens into a full-screen map: every marker as a star in its note's constellation, beside one column that shows how much is learned overall and by course, plus the streak and what's due this week. Tap a course to see only its part of the sky, a star to open its marker, Esc to fold the map away.
+
 **Light and dark.** The sun/moon button in the header switches themes, and Settings → Appearance offers Match device, Light or Dark. Dark is the original deep-violet look; light is near-white and quiet, with color kept for courses, folders and markers. The choice is saved per device, not synced.
 
 ## Set up and deploy
@@ -135,7 +141,7 @@ The backend contract (`/api/marker`) and the Supabase tables are plain JSON, so 
 - **Math** uses 64-digit precision. A few functions only exist for ordinary numbers, and those results are marked ≈.
 - **Typed recall answers** are compared by key words, so a correct answer in different words can show as missing ideas. It's a prompt for your own judgment (you still choose Got it or Again), and the AI check is optional because it counts toward the daily AI limit.
 - **Suggested markers** use simple patterns and will miss things or point at unimportant sentences. They only read English well.
-- **The card-to-page morph** uses the View Transitions API (Chrome, Edge, Safari 18+). Elsewhere, and with reduced motion on, screens switch instantly.
+- **Motion:** the 3D entrance, the dive into a note and the map's unfolding use CSS 3D transforms and the Web Animations API. Going back to the dial uses the View Transitions API (Chrome, Edge, Safari 18+). With reduced motion on, screens switch instantly. The 3D pieces are checked in desktop Chromium only so far; they still need a look on a real iPad.
 - **Leaderboard** points are decided by the server: 10 for “Got it”, 3 for “Again”, once per marker per day. It's still a friendly measure of effort, not proof of knowledge.
 - **Dependencies:** `npm audit` reports 10 low/moderate findings, all in the service-worker build tooling (workbox-build and its glob/minimatch/ejs chain via vite-plugin-pwa). They run only at build time on trusted input and aren't shipped to students. CI fails on any high or critical finding.
 - AI answers arrive all at once. Streaming would make long drafts feel faster.
